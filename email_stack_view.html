@@ -1,0 +1,680 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Email Inbox Stack View</title>
+  <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link href="https://unpkg.com/vis-network@9.1.2/styles/vis-network.min.css" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    
+    html, body { 
+      height: 100%; 
+      margin: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f7fa;
+    }
+    
+    .container {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    /* Header */
+    .header {
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    
+    .search-box {
+      flex: 1;
+      max-width: 400px;
+      position: relative;
+    }
+    
+    .search-box input {
+      width: 100%;
+      padding: 8px 16px 8px 40px;
+      border: 1px solid #e2e8f0;
+      border-radius: 24px;
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    
+    .search-box input:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    .search-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #6b7280;
+    }
+    
+    .filter-btn, .time-selector {
+      padding: 8px 16px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: white;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .filter-btn:hover, .time-selector:hover {
+      border-color: #3b82f6;
+      background: #f0f9ff;
+    }
+    
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    /* Cluster Network Section */
+    .cluster-section {
+      height: 60%;
+      background: white;
+      border-bottom: 2px solid #e2e8f0;
+      position: relative;
+      padding: 20px;
+    }
+    
+    #cluster-network {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .cluster-stats {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.98);
+      padding: 16px 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      font-size: 13px;
+      border: 1px solid #e2e8f0;
+      z-index: 10;
+    }
+    
+    /* Timeline Section */
+    .timeline-section {
+      height: 40%;
+      background: #fafbfc;
+      overflow-y: auto;
+      position: relative;
+    }
+    
+    .timeline-header {
+      position: sticky;
+      top: 0;
+      background: #f3f4f6;
+      padding: 12px 24px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 13px;
+      font-weight: 600;
+      color: #4b5563;
+      z-index: 10;
+    }
+    
+    .timeline-content {
+      padding: 0;
+    }
+    
+    .email-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 24px;
+      border-bottom: 1px solid #e5e7eb;
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+    
+    .email-item:hover {
+      background: #f9fafb;
+      transform: translateX(2px);
+    }
+    
+    .email-item.highlighted {
+      background: #eff6ff;
+      border-left: 3px solid #3b82f6;
+    }
+    
+    .email-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+      margin-right: 16px;
+      flex-shrink: 0;
+    }
+    
+    .email-item.important .email-dot {
+      background: #ef4444;
+      width: 10px;
+      height: 10px;
+    }
+    
+    .email-content {
+      flex: 1;
+      min-width: 0;
+    }
+    
+    .email-from {
+      font-weight: 600;
+      font-size: 14px;
+      color: #111827;
+      margin-bottom: 2px;
+    }
+    
+    .email-subject {
+      font-size: 13px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .email-time {
+      font-size: 12px;
+      color: #9ca3af;
+      margin-left: 16px;
+    }
+    
+    /* Connection Lines */
+    .connection-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+    
+    /* Tooltip */
+    .tooltip {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+    }
+    
+    /* Loading */
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" placeholder="Search emails..." id="searchInput">
+    </div>
+    <button class="filter-btn" onclick="toggleFilters()">
+      🎚️ Filters
+    </button>
+    <select class="time-selector" id="timeSelector" onchange="filterByTime()">
+      <option value="all">All Time</option>
+      <option value="week">Past Week</option>
+      <option value="month">Past Month</option>
+      <option value="year">Past Year</option>
+    </select>
+  </div>
+  
+  <!-- Main Content -->
+  <div class="main-content">
+    <!-- Cluster Network Section -->
+    <div class="cluster-section">
+      <div id="cluster-network"></div>
+      <div class="cluster-stats">
+        <div><strong>26</strong> main conversation clusters</div>
+        <div><strong>2847</strong> individual emails shown</div>
+        <div><strong>Period:</strong> 2009-06-05 to 2025-07-24</div>
+      </div>
+      <canvas class="connection-canvas" id="connectionCanvas"></canvas>
+    </div>
+    
+    <!-- Timeline Section -->
+    <div class="timeline-section">
+      <div class="timeline-header">
+        Individual Emails Timeline
+      </div>
+      <div class="timeline-content" id="timelineContent">
+        <div class="loading">
+          <div class="spinner"></div>
+          <div>Loading emails...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// Data from Python analyzer
+const CLUSTERS = [
+  {
+    "id":"cluster_0_prabhat_top_matching",
+    "label":"Job Alerts - Business Analyst",
+    "emails":221,
+    "participants":["jobmessenger@monster.com.sg","prabhatravib@gmail.com"],
+    "color":"#3b82f6",
+    "sample_subjects":["Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants"]
+  },
+  {
+    "id":"cluster_9_utf8b4pififbyywjoyxq",
+    "label":"Photo Sharing Notifications",
+    "emails":10,
+    "participants":["noreply@m10.myzamanamail.com","noreply@m5.myzamanamail.com","noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m4.myzamanamail.com"],
+    "color":"#10b981",
+    "sample_subjects":["=?utf-8?B?4piFIFByYWJoYXQsIGNoZWNrIG91dCB0aGlzIHBob3RvIG9u?=\n =?utf-8?B?IFBpY2J1bSE=?="]
+  },
+  {
+    "id":"cluster_3_only_hours_left_to_c",
+    "label":"GMAT Study Offers",
+    "emails":9,
+    "participants":["gmat@economist.com","support@gmat.economist.com"],
+    "color":"#f59e0b",
+    "sample_subjects":["Only hours left to claim our BEST offer ever","Only hours left to claim this offer","Only hours left to claim 20 PERCENT OFF","Only hours left to claim this offer!"]
+  },
+  {
+    "id":"cluster_4_salary_inr_1000000_1",
+    "label":"High Salary Job Opportunities",
+    "emails":9,
+    "participants":["info@monsterindia.com","prabhatravib@gmail.com","opportunities@monsterindia.com"],
+    "color":"#8b5cf6",
+    "sample_subjects":["Salary: INR 10,00,000 - 15,00,000 P.A : JP Morgan, Prokarma, Larsen and toubro , Oracal, UST, IBM,  (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A: L&T, Dlf, Nissan, Siemens, Tata, Aditya Birla (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A  (Source: Monster)"]
+  },
+  {
+    "id":"cluster_1_support_re_indeed_su",
+    "label":"Indeed Support & Web Scraping",
+    "emails":2,
+    "participants":["support+id2642410@indeed.zendesk.com","support@indeed.zendesk.com"],
+    "color":"#ef4444",
+    "sample_subjects":["[Support] Re: Indeed Support - Other... - Web Scraping the Indeed website","[Support] Re: Indeed Support - Other... - Web Scraping the Indeed\n website"]
+  }
+];
+const INDIVIDUAL_EMAILS = [{"id":0,"from":"no-reply@accounts.google.com","subject":"Security alert for prabhatravib@gmail.com","time":"4d ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":1,"from":"stream@newsletters.fubo.tv","subject":"The ball is in your court...","time":"5d ago","important":true,"relatedCluster":null},{"id":2,"from":"no-reply@accounts.google.com","subject":"Security alert for prabhatravib@gmail.com","time":"5d ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":3,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"7d ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":4,"from":"stream@newsletters.fubo.tv","subject":"=?UTF-8?B?RG9u4oCZdCBtaXNzIHRoZXNlIG11c3Qtc2VlcyDwn5GA?=","time":"1d ago","important":true,"relatedCluster":null},{"id":5,"from":"no-reply@accounts.google.com","subject":"Security alert for prabhatravib@gmail.com","time":"12d ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":6,"from":"stream@newsletters.fubo.tv","subject":"Your $70 discount awaits =?UTF-8?B?8J+RgA==?=","time":"12d ago","important":true,"relatedCluster":null},{"id":7,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"14d ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":8,"from":"stream@newsletters.fubo.tv","subject":"=?UTF-8?B?4pqg77iP?= REMINDER: get $70 off the best live sports","time":"5d ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":9,"from":"stream@newsletters.fubo.tv","subject":"Your exclusive gift awaits! =?UTF-8?B?8J+OgfCfpbM=?=","time":"14d ago","important":true,"relatedCluster":null},{"id":10,"from":"stream@newsletters.fubo.tv","subject":"Kick off your week with HUGE savings","time":"16d ago","important":true,"relatedCluster":null},{"id":11,"from":"support@openai.com","subject":"Get started","time":"18d ago","important":true,"relatedCluster":null},{"id":12,"from":"support@openai.com","subject":"Get started","time":"18d ago","important":true,"relatedCluster":null},{"id":13,"from":"support@openai.com","subject":"Get started","time":"20d ago","important":true,"relatedCluster":null},{"id":14,"from":"team@email2.anthropic.com","subject":"Get more from Claude with these power moves (5/5)","time":"1mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":15,"from":"no-reply@accounts.google.com","subject":"Security alert","time":"1d ago","important":true,"relatedCluster":null},{"id":16,"from":"stream@newsletters.fubo.tv","subject":"See what =?UTF-8?B?ZXZlcnlvbmXigJlzIHdhdGNoaW5nIHRoaXMgSnVseSDwn5GA?=","time":"13d ago","important":true,"relatedCluster":null},{"id":17,"from":"stream@newsletters.fubo.tv","subject":"Start your week with $80 off live sports","time":"2mo ago","important":true,"relatedCluster":null},{"id":18,"from":"no-reply@render.com","subject":"[Important] Build failed on your Render account","time":"1mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":19,"from":"no-reply-aws@amazon.com","subject":"Resolved 174960135100945: wrongly closed my account","time":"1mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":20,"from":"no-reply@accounts.google.com","subject":"Security alert","time":"1mo ago","important":true,"relatedCluster":null},{"id":21,"from":"no-reply@accounts.google.com","subject":"Security alert for prabhatravib@gmail.com","time":"2mo ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":22,"from":"no-reply-aws@amazon.com","subject":"Amazon Web Services: You have opened a new Support case:\n 174960135100945","time":"1mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":23,"from":"stream@newsletters.fubo.tv","subject":"Long weekend. Big savings.","time":"2mo ago","important":true,"relatedCluster":null},{"id":24,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":25,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":26,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":27,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":28,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":29,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":30,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":31,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":32,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":33,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":34,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":35,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":36,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"15d ago","important":true,"relatedCluster":null},{"id":37,"from":"stream@newsletters.fubo.tv","subject":"REMINDER: $80 off","time":"2mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":38,"from":"stream@newsletters.fubo.tv","subject":"Don't be fooled! =?UTF-8?B?8J+Ruw==?= Stream for FREE!","time":"3mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":39,"from":"stream@newsletters.fubo.tv","subject":"Free streaming? Yes, please! =?UTF-8?B?8J+ZjA==?=","time":"3mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":40,"from":"stream@newsletters.fubo.tv","subject":"See why customers love Fubo! =?UTF-8?B?8J+RgA==?=","time":"4mo ago","important":true,"relatedCluster":null},{"id":41,"from":"stream@newsletters.fubo.tv","subject":"Don't miss these savings =?UTF-8?B?8J+RgA==?=","time":"6mo ago","important":true,"relatedCluster":null},{"id":42,"from":"aws-marketing-email-replies@amazon.com","subject":"Validate your technical skills and cloud expertise","time":"4mo ago","important":true,"relatedCluster":null},{"id":43,"from":"stream@newsletters.fubo.tv","subject":"=?UTF-8?B?TGV04oCZcyB3YXRjaCBzb21ldGhpbmcgbmV3ISDwn5O6?=","time":"5mo ago","important":true,"relatedCluster":null},{"id":44,"from":"support@mail.bhgfinancial.com","subject":"=?UTF-8?B?8J+OiSBHcmVhdCBuZXdzISBXZSBoYXZlIGEgbG9hbiBvcHBvcnR1?=\n =?UTF-8?B?bml0eSBkZXNpZ25lZCBmb3IgeW91?=","time":"11mo ago","important":true,"relatedCluster":null},{"id":45,"from":"aws-marketing-email-replies@amazon.com","subject":"Smarter chatbots, better data pipelines and the right data tools\n for AWS","time":"4mo ago","important":true,"relatedCluster":null},{"id":46,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":47,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":48,"from":"no-reply@render.com","subject":"[Important] Build failed on your Render account","time":"1mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":49,"from":"bprabhatravi@gmail.com","subject":"[Support] Re: Indeed Support - Other... - Web Scraping the Indeed website","time":"7y ago","important":false,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":50,"from":"support@indeed.zendesk.com","subject":"[Support] Re: Indeed Support - Other... - Web Scraping the Indeed\n website","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":51,"from":"no-reply@accounts.google.com","subject":"Security alert","time":"4mo ago","important":true,"relatedCluster":null},{"id":52,"from":"stream@newsletters.fubo.tv","subject":"Watch Fubo for FREE! =?UTF-8?B?8J+kkQ==?=","time":"4mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":53,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":54,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":55,"from":"support@mail.bhgfinancial.com","subject":"*** Information for Abc - we offer quick funding","time":"8mo ago","important":true,"relatedCluster":null},{"id":56,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"6mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":57,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"14d ago","important":true,"relatedCluster":null},{"id":58,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"14d ago","important":true,"relatedCluster":null},{"id":59,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"14d ago","important":true,"relatedCluster":null},{"id":60,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"14d ago","important":true,"relatedCluster":null},{"id":61,"from":"no-reply@render.com","subject":"build failed for pitext-root","time":"14d ago","important":true,"relatedCluster":null},{"id":62,"from":"update@intoday.in","subject":"DailyO Newsletter","time":"10y ago","important":true,"relatedCluster":null},{"id":63,"from":"no-reply@accounts.google.com","subject":"Security alert","time":"1mo ago","important":true,"relatedCluster":null},{"id":64,"from":"bprabhatravi@gmail.com","subject":"Hi","time":"9y ago","important":false,"relatedCluster":null},{"id":65,"from":"info@veritasprep.com","subject":"How to Answer the \"Post-MBA Goal\" Question in 3 Steps","time":"9y ago","important":true,"relatedCluster":null},{"id":66,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":67,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"1y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":68,"from":"support@mail.bhgfinancial.com","subject":"We respect the credit score you built-Checking won't affect it","time":"7mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":69,"from":"opportunities@monster.com.my","subject":"Opening for ETL Developer (Malaysia) (Source: Monster)","time":"3y ago","important":false,"relatedCluster":null},{"id":70,"from":"gmat@economist.com","subject":"ALERT: Our MBA Scholarship Contest is Open!","time":"7y ago","important":true,"relatedCluster":null},{"id":71,"from":"no-reply-aws@amazon.com","subject":"Amazon Web Services Billing Statement Available [Account:\n 183295408836]","time":"6mo ago","important":true,"relatedCluster":null},{"id":72,"from":"stream@newsletters.fubo.tv","subject":"Fall in love with free entertainment! =?UTF-8?B?8J+SmA==?=","time":"5mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":73,"from":"stream@newsletters.fubo.tv","subject":"You don't want to miss this =?UTF-8?B?8J+RgA==?=","time":"4mo ago","important":true,"relatedCluster":null},{"id":74,"from":"privacy-noreply@policies.google.com","subject":"Improvements to our Privacy Policy and Privacy Controls","time":"7y ago","important":true,"relatedCluster":null},{"id":75,"from":"no-reply-aws@amazon.com","subject":"Resolved 173456408900412: Limit Increase: SageMaker Endpoints","time":"6mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":76,"from":"update@intoday.in","subject":"Pak shuts terror camps in PoK fearing Balakot repeat","time":"6y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":77,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"5mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":78,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":79,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":80,"from":"noreply@email.amctheatres.com","subject":"Prabhat, Your Weekly Ticket Is Here","time":"3mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":81,"from":"update@intoday.in","subject":"NewsPresso, 10 news stories you need to know about","time":"10y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":82,"from":"noreply@email.amctheatres.com","subject":"=?UTF-8?B?WW91ciBTdW1tZXIgUXVhcnRlcmx5IE1vdmllIFJldmlldyBDb21p?=\n =?UTF-8?B?bmcgaW4gSG90IPCflKU=?=","time":"9mo ago","important":true,"relatedCluster":null},{"id":83,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":84,"from":"no-reply@accounts.google.com","subject":"Security alert for prabhatravib@gmail.com","time":"9mo ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":85,"from":"support@mail.bhgfinancial.com","subject":"=?UTF-8?B?QWJjLCB5b3VyIG9wdGlvbnMgYXJlIHdhaXRpbmfigJRHZXQgc3Rh?=\n =?UTF-8?B?cnRlZCBoZXJl?=","time":"11mo ago","important":true,"relatedCluster":null},{"id":86,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":87,"from":"update@intoday.in","subject":"Ladies ! Inimate hygiene made easy","time":"8y ago","important":true,"relatedCluster":null},{"id":88,"from":"support@mail.bhgfinancial.com","subject":"Update for Abc: Ready to take financial control?","time":"8mo ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":89,"from":"stream@newsletters.fubo.tv","subject":"Save $70 on =?UTF-8?B?4pq+IQ==?=","time":"3mo ago","important":true,"relatedCluster":null},{"id":90,"from":"info@veritasprep.com","subject":"7 Free Veritas Prep GMAT Practice Tests","time":"10y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":91,"from":"support@gmat.economist.com","subject":"Last sale of summer ends TONIGHT","time":"8y ago","important":true,"relatedCluster":null},{"id":92,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":93,"from":"stream@newsletters.fubo.tv","subject":"$70 off is better than a box of chocolates =?UTF-8?B?8J+SnQ==?=","time":"5mo ago","important":true,"relatedCluster":null},{"id":94,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":95,"from":"info@veritasprep.com","subject":"3 Business School Essay Mistakes to Avoid","time":"8y ago","important":true,"relatedCluster":null},{"id":96,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"7y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":97,"from":"anomalydetection@costalerts.amazonaws.com","subject":"Getting started with AWS Cost Anomaly Detection - bprabhatravi\n (183295408836)","time":"6mo ago","important":true,"relatedCluster":"cluster_0_prabhat_top_matching"},{"id":98,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"},{"id":99,"from":"jobmessenger@monster.com.sg","subject":"Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants","time":"8y ago","important":true,"relatedCluster":"cluster_1_support_re_indeed_su"}];
+
+let network;
+let selectedCluster = null;
+
+// Initialize the visualization
+function init() {
+  initClusterNetwork();
+  renderTimeline();
+  setupConnections();
+  setupEventListeners();
+}
+
+// Initialize cluster network
+function initClusterNetwork() {
+  const container = document.getElementById('cluster-network');
+  
+  // Create nodes from clusters
+  const nodes = new vis.DataSet(CLUSTERS.map(cluster => ({
+    id: cluster.id,
+    label: cluster.label,
+    value: cluster.emails,
+    color: cluster.color,
+    font: { color: 'white', size: 16, face: 'Arial', bold: true },
+    title: `${cluster.label}\n${cluster.emails} emails\nParticipants: ${cluster.participants.slice(0, 3).join(', ')}${cluster.participants.length > 3 ? '...' : ''}`
+  })));
+  
+  // Create edges between related clusters (shared participants)
+  const edges = [];
+  for (let i = 0; i < CLUSTERS.length; i++) {
+    for (let j = i + 1; j < CLUSTERS.length; j++) {
+      const clusterA = CLUSTERS[i];
+      const clusterB = CLUSTERS[j];
+      
+      // Find shared participants
+      const participantsA = new Set(clusterA.participants);
+      const shared = clusterB.participants.filter(p => participantsA.has(p));
+      
+      if (shared.length > 0) {
+        edges.push({
+          from: clusterA.id,
+          to: clusterB.id,
+          value: shared.length,
+          title: `Shared participants: ${shared.join(', ')}`
+        });
+      }
+    }
+  }
+  
+  const edgesDataSet = new vis.DataSet(edges);
+  const data = { nodes, edges: edgesDataSet };
+  
+  const options = {
+    layout: {
+      improvedLayout: true,
+      hierarchical: false
+    },
+    physics: {
+      enabled: true,
+      stabilization: { 
+        iterations: 300,
+        fit: true 
+      },
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.02,
+        springLength: 300,
+        springConstant: 0.01,
+        damping: 0.5,
+        avoidOverlap: 1.0
+      }
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      zoomView: true,
+      dragView: true
+    },
+    edges: {
+      smooth: { enabled: true, type: "dynamic" },
+      color: { color: '#d1d5db', highlight: '#3b82f6' },
+      width: 1,
+      scaling: {
+        min: 1,
+        max: 4,
+        label: { enabled: false }
+      }
+    },
+    nodes: {
+      shape: 'box',
+      margin: 15,
+      borderWidth: 2,
+      borderColor: '#e2e8f0',
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.1)',
+        size: 5,
+        x: 2,
+        y: 2
+      },
+      scaling: {
+        min: 100,
+        max: 200,
+        label: {
+          enabled: true,
+          min: 14,
+          max: 18
+        }
+      }
+    }
+  };
+  
+  network = new vis.Network(container, data, options);
+  
+  // Disable physics after stabilization for more stable positioning
+  network.on("stabilizationProgress", function(params) {
+    if (params.iterations >= params.total) {
+      setTimeout(() => {
+        network.setOptions({ physics: { enabled: false } });
+      }, 1000);
+    }
+  });
+  
+  // Handle cluster clicks
+  network.on("click", function(params) {
+    if (params.nodes.length > 0) {
+      selectedCluster = params.nodes[0];
+      highlightRelatedEmails(selectedCluster);
+      updateConnections();
+    } else {
+      selectedCluster = null;
+      clearHighlights();
+      updateConnections();
+    }
+  });
+  
+  // Handle hover
+  network.on("hoverNode", function(params) {
+    showClusterTooltip(params.node, params.pointer.DOM);
+  });
+  
+  network.on("blurNode", function() {
+    hideTooltip();
+  });
+}
+
+// Render timeline of individual emails
+function renderTimeline() {
+  const timeline = document.getElementById('timelineContent');
+  timeline.innerHTML = '';
+  
+  INDIVIDUAL_EMAILS.forEach(email => {
+    const emailItem = document.createElement('div');
+    emailItem.className = 'email-item';
+    emailItem.dataset.emailId = email.id;
+    emailItem.dataset.cluster = email.relatedCluster || '';
+    
+    if (email.important) {
+      emailItem.classList.add('important');
+    }
+    
+    emailItem.innerHTML = `
+      <div class="email-dot"></div>
+      <div class="email-content">
+        <div class="email-from">${email.from}</div>
+        <div class="email-subject">${email.subject}</div>
+      </div>
+      <div class="email-time">${email.time}</div>
+    `;
+    
+    emailItem.addEventListener('mouseenter', function() {
+      if (email.relatedCluster) {
+        highlightCluster(email.relatedCluster);
+      }
+    });
+    
+    emailItem.addEventListener('mouseleave', function() {
+      if (!selectedCluster) {
+        network.unselectAll();
+      }
+    });
+    
+    emailItem.addEventListener('click', function() {
+      showEmailDetails(email);
+    });
+    
+    timeline.appendChild(emailItem);
+  });
+}
+
+// Setup visual connections between clusters and emails
+function setupConnections() {
+  const canvas = document.getElementById('connectionCanvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Set canvas size
+  function resizeCanvas() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    updateConnections();
+  }
+  
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+}
+
+// Update connection lines
+function updateConnections() {
+  const canvas = document.getElementById('connectionCanvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  if (!selectedCluster) return;
+  
+  // Get cluster position in canvas coordinates
+  const clusterPos = network.getPositions([selectedCluster])[selectedCluster];
+  const canvasPos = network.canvasToDOM({x: clusterPos.x, y: clusterPos.y});
+  
+  // Draw connections to related emails
+  const emailItems = document.querySelectorAll('.email-item');
+  emailItems.forEach(item => {
+    if (item.dataset.cluster === selectedCluster) {
+      const rect = item.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
+      
+      const startX = canvasPos.x;
+      const startY = canvasPos.y;
+      const endX = rect.left - canvasRect.left + 4;
+      const endY = rect.top - canvasRect.top + rect.height / 2 - canvas.offsetTop;
+      
+      // Draw curved line
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      
+      const controlX = (startX + endX) / 2;
+      const controlY = Math.min(startY, endY) - 50;
+      
+      ctx.quadraticCurveTo(controlX, controlY, endX, endY);
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  });
+}
+
+// Highlight related emails when cluster is selected
+function highlightRelatedEmails(clusterId) {
+  const emailItems = document.querySelectorAll('.email-item');
+  emailItems.forEach(item => {
+    if (item.dataset.cluster === clusterId) {
+      item.classList.add('highlighted');
+    } else {
+      item.classList.remove('highlighted');
+    }
+  });
+}
+
+// Clear all highlights
+function clearHighlights() {
+  const emailItems = document.querySelectorAll('.email-item');
+  emailItems.forEach(item => {
+    item.classList.remove('highlighted');
+  });
+}
+
+// Highlight cluster when hovering email
+function highlightCluster(clusterId) {
+  network.selectNodes([clusterId]);
+}
+
+// Show cluster tooltip
+function showClusterTooltip(nodeId, position) {
+  const cluster = CLUSTERS.find(c => c.id === nodeId);
+  if (!cluster) return;
+  
+  const tooltip = document.getElementById('tooltip');
+  tooltip.innerHTML = `
+    <strong>${cluster.label}</strong><br>
+    ${cluster.emails} emails<br>
+    Participants: ${cluster.participants.slice(0, 3).join(', ')}...
+  `;
+  
+  tooltip.style.left = position.x + 10 + 'px';
+  tooltip.style.top = position.y - 30 + 'px';
+  tooltip.style.display = 'block';
+}
+
+// Hide tooltip
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+// Show email details
+function showEmailDetails(email) {
+  alert(`Email Details:\n\nFrom: ${email.from}\nSubject: ${email.subject}\nTime: ${email.time}\n\n[Full email content would be shown here]`);
+}
+
+// Search functionality
+function setupEventListeners() {
+  const searchInput = document.getElementById('searchInput');
+  searchInput.addEventListener('input', function(e) {
+    const query = e.target.value.toLowerCase();
+    const emailItems = document.querySelectorAll('.email-item');
+    
+    emailItems.forEach(item => {
+      const content = item.textContent.toLowerCase();
+      if (content.includes(query)) {
+        item.style.display = 'flex';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+  });
+}
+
+// Filter functions
+function toggleFilters() {
+  alert('Filter panel would open here with options for:\n- Sender filters\n- Date range\n- Importance\n- Has attachments\n- Unread only');
+}
+
+function filterByTime() {
+  const selector = document.getElementById('timeSelector');
+  const value = selector.value;
+  alert(`Filtering by: ${value}\n\n[Would filter both clusters and individual emails by time period]`);
+}
+
+// Initialize on load
+window.addEventListener('load', init);
+
+// Update connections when scrolling timeline
+document.querySelector('.timeline-section').addEventListener('scroll', updateConnections);
+</script>
+
+</body>
+</html>
