@@ -1,0 +1,434 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Enhanced Email Inbox Graph</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { display: flex; background: #fafbfc; }
+    #sidebar {
+      width: 320px; padding: 24px; background: #ffffff; border-right: 1px solid #d1d5db;
+      box-sizing: border-box; overflow-y: auto; box-shadow: 1px 0 3px rgba(0,0,0,0.08);
+    }
+    #network { flex: 1; position: relative; background: #ffffff; }
+    h1 { margin: 0 0 16px; font-size: 18px; font-weight: 700; color: #111827; letter-spacing: -0.025em; }
+    .stats { 
+      background: #f3f4f6; padding: 16px; border-radius: 4px; margin-bottom: 24px; 
+      font-size: 13px; border-left: 3px solid #6366f1; color: #374151;
+    }
+    .stats div { margin-bottom: 6px; font-weight: 500; }
+    fieldset { 
+      border: 1px solid #d1d5db; margin-bottom: 20px; padding: 16px; border-radius: 4px; 
+      background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    legend { padding: 0 8px; font-weight: 600; color: #374151; font-size: 13px; }
+    .preset-bar { margin-bottom: 24px; }
+    .preset-bar button {
+      margin: 0 4px 8px 0; padding: 6px 12px; border: 1px solid #d1d5db; background: #ffffff;
+      border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.15s;
+      color: #374151;
+    }
+    .preset-bar button:hover { background: #f9fafb; border-color: #6366f1; color: #6366f1; }
+    .preset-bar button.active { background: #6366f1; color: white; border-color: #6366f1; }
+    label { font-size: 13px; display: block; margin-bottom: 10px; cursor: pointer; color: #374151; font-weight: 500; }
+    input[type="radio"], input[type="checkbox"] { margin-right: 8px; }
+    #apply { 
+      width: 100%; padding: 10px; background: #6366f1; color: white; border: none;
+      border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #apply:hover { background: #4f46e5; }
+    .legend { font-size: 12px; margin-top: 24px; color: #6b7280; }
+    .legend ul { padding-left: 16px; margin: 8px 0; }
+    .legend li { margin-bottom: 4px; }
+    .info-panel {
+      position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.98);
+      padding: 16px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 12px; max-width: 320px; display: none; border: 1px solid #e5e7eb;
+    }
+  </style>
+  <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link href="https://unpkg.com/vis-network@9.1.2/styles/vis-network.min.css" rel="stylesheet" />
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Email Inbox Analysis</h1>
+  
+  <div class="stats">
+    <div><strong>TOTAL_EMAILS_PLACEHOLDER</strong> total emails</div>
+    <div><strong>TOTAL_CLUSTERS_PLACEHOLDER</strong> clusters found</div>
+    <div><strong>Period:</strong> DATE_RANGE_PLACEHOLDER</div>
+  </div>
+
+  <div class="preset-bar">
+    <button data-preset="balanced">Balanced</button>
+    <button data-preset="people">People Focus</button>
+    <button data-preset="time">Timeline</button>
+    <button data-preset="communities">Communities</button>
+    <button data-preset="isolates">Isolates</button>
+  </div>
+
+  <fieldset>
+    <legend>Primary View</legend>
+    <label><input type="radio" name="view" value="overview" checked> Overview</label>
+    <label><input type="radio" name="view" value="people"> People Connections</label>
+    <label><input type="radio" name="view" value="time"> Time-based Clustering</label>
+    <label><input type="radio" name="view" value="isolates"> Show Isolates Only</label>
+    <label><input type="radio" name="view" value="communities"> Community Detection</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Display Density</legend>
+    <label><input type="radio" name="density" value="minimal"> Minimal</label>
+    <label><input type="radio" name="density" value="normal" checked> Normal</label>
+    <label><input type="radio" name="density" value="dense"> Dense</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Node Coloring</legend>
+    <label><input type="radio" name="colorBy" value="community" checked> By Community</label>
+    <label><input type="radio" name="colorBy" value="participant"> By Top Participant</label>
+    <label><input type="radio" name="colorBy" value="volume"> By Email Volume</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Filters</legend>
+    <label><input type="checkbox" id="hideWeak"> Hide weak connections</label>
+    <label><input type="checkbox" id="hideIsolates"> Hide isolated nodes</label>
+    <label><input type="checkbox" id="hideSingleEmail"> Hide single-email clusters</label>
+  </fieldset>
+
+  <button id="apply">Update Graph</button>
+
+  <div class="legend">
+    <p><strong>Graph Legend:</strong></p>
+    <ul>
+      <li><strong>Nodes:</strong> Email conversation clusters</li>
+      <li><strong>Size:</strong> Number of emails in cluster</li>
+      <li><strong>Connections:</strong> Shared participants + timing</li>
+      <li><strong>Solid lines:</strong> Strong relationships</li>
+      <li><strong>Dashed lines:</strong> Weak relationships</li>
+    </ul>
+  </div>
+</div>
+
+<div id="network"></div>
+<div id="info-panel" class="info-panel"></div>
+
+<script>
+const CLUSTERS = CLUSTERS_JSON_PLACEHOLDER;
+const DEFAULTS = DEFAULTS_JSON_PLACEHOLDER;
+
+// Enhanced utility functions
+function jaccard(a, b) {
+  const A = new Set(a), B = new Set(b);
+  if (A.size === 0 && B.size === 0) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+function timeDecay(deltaDays, tau) {
+  return Math.exp(-deltaDays / tau);
+}
+
+function midpoint(span) {
+  return (span[0] + span[1]) / 2.0;
+}
+
+function topPercentEdges(edges, perc) {
+  if (perc >= 1.0) return edges;
+  const sorted = [...edges].sort((a, b) => b.w - a.w);
+  const keep = Math.max(1, Math.round(sorted.length * perc));
+  return sorted.slice(0, keep);
+}
+
+function components(nodes, edges) {
+  const id2idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
+  const adj = nodes.map(() => []);
+  edges.forEach(e => {
+    const u = id2idx[e.from], v = id2idx[e.to];
+    if (u !== undefined && v !== undefined) {
+      adj[u].push(v); adj[v].push(u);
+    }
+  });
+  const comp = Array(nodes.length).fill(-1);
+  let cid = 0;
+  const nodeToComp = {};
+  for (let i = 0; i < nodes.length; i++) {
+    if (comp[i] !== -1) continue;
+    const stack = [i];
+    comp[i] = cid;
+    while (stack.length) {
+      const x = stack.pop();
+      nodeToComp[nodes[x].id] = cid;
+      for (const y of adj[x]) if (comp[y] === -1) {
+        comp[y] = cid; stack.push(y);
+      }
+    }
+    cid++;
+  }
+  return nodeToComp;
+}
+
+function build(view, densityKey, colorBy, hideWeak, hideIsolates, hideSingleEmail) {
+  const tau = DEFAULTS.tau;
+  const strongW = DEFAULTS.strong_w;
+  const perc = DEFAULTS.densityPerc[densityKey || "normal"] || 0.25;
+
+  // Filter clusters
+  let filteredClusters = CLUSTERS;
+  if (hideSingleEmail) {
+    filteredClusters = filteredClusters.filter(c => c.emails > 1);
+  }
+
+  let edges = [];
+  if (view !== "isolates") {
+    for (let i = 0; i < filteredClusters.length; i++) {
+      for (let j = i + 1; j < filteredClusters.length; j++) {
+        const A = filteredClusters[i], B = filteredClusters[j];
+        const people = jaccard(A.participants, B.participants);
+        const ta = midpoint(A.spanDays), tb = midpoint(B.spanDays);
+        const dt = Math.abs(tb - ta);
+        const time = timeDecay(dt, tau);
+
+        let w;
+        if (view === "people") w = people;
+        else if (view === "time") w = time;
+        else w = DEFAULTS.alpha_overview * people + (1 - DEFAULTS.alpha_overview) * time;
+
+        if (w > 0.01) {  // Minimum threshold
+          edges.push({ from: A.id, to: B.id, w, people, time, dt });
+        }
+      }
+    }
+    edges = topPercentEdges(edges, perc);
+  }
+
+  if (hideWeak) edges = edges.filter(e => e.w >= strongW);
+
+  // Calculate node degrees
+  const degree = Object.fromEntries(filteredClusters.map(c => [c.id, 0]));
+  edges.forEach(e => { 
+    if (degree[e.from] !== undefined) degree[e.from] += e.w;
+    if (degree[e.to] !== undefined) degree[e.to] += e.w;
+  });
+  const maxDeg = Math.max(1, ...Object.values(degree));
+
+  // Enhanced color palette
+  const palette = [
+    "#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6",
+    "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1"
+  ];
+  
+  const nodeToComp = components(filteredClusters, edges);
+
+  // Create visual nodes
+  const nodesVis = filteredClusters
+    .filter(n => !(hideIsolates && degree[n.id] === 0))
+    .map(n => {
+      const d = degree[n.id];
+      const baseSize = Math.max(20, Math.min(60, 20 + Math.sqrt(n.emails) * 8));
+      const size = baseSize + (d / maxDeg) * 20;
+      
+      let color;
+      if (colorBy === "participant") {
+        const tp = n.participants[0] || "unknown";
+        const hash = tp.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0);
+        color = palette[Math.abs(hash) % palette.length];
+      } else if (colorBy === "volume") {
+        const intensity = Math.min(n.emails / 50, 1);
+        const redValue = Math.round(255 * intensity);
+        const blueValue = Math.round(255 * (1 - intensity));
+        color = "rgb(" + redValue + ", 100, " + blueValue + ")";
+      } else {
+        const comp = nodeToComp[n.id] || 0;
+        color = palette[comp % palette.length];
+      }
+
+      // Create proper HTML tooltip
+      let participantList = n.participants.slice(0, 5).join("<br/>");
+      if (n.participants.length > 5) participantList += "<br/>...";
+      
+      const displayLabel = n.label || n.id;
+      const tooltip = "<div style='max-width: 250px;'>" +
+        "<strong>" + displayLabel + "</strong><br/>" +
+        "<strong>Emails:</strong> " + n.emails + "<br/>" +
+        "<strong>Participants:</strong><br/>" + participantList +
+        "</div>";
+
+      return {
+        id: n.id,
+        label: displayLabel.length > 25 ? displayLabel.substring(0, 25) + "..." : displayLabel,
+        title: tooltip,
+        value: n.emails,
+        size,
+        color,
+        font: { size: Math.max(11, Math.min(14, 8 + Math.sqrt(n.emails))), face: "Segoe UI, Arial" }
+      };
+    });
+
+  // Create visual edges
+  const visibleIds = new Set(nodesVis.map(n => n.id));
+  const edgesVis = edges
+    .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
+    .map(e => {
+      const strong = e.w >= strongW;
+      return {
+        from: e.from, to: e.to,
+        value: e.w,
+        width: strong ? 2 + 4 * e.w : 1 + 2 * e.w,
+        color: strong ? "#3B82F6" : "rgba(59, 130, 246, 0.3)",
+        dashes: !strong,
+        smooth: { enabled: true, type: "dynamic", roundness: 0.3 },
+        title: "<div><strong>Connection Strength:</strong> " + e.w.toFixed(2) + "<br/><strong>People Overlap:</strong> " + e.people.toFixed(2) + "<br/><strong>Time Proximity:</strong> " + e.time.toFixed(2) + "<br/><strong>Days Apart:</strong> " + e.dt + "</div>"
+      };
+    });
+
+  return { nodesVis, edgesVis };
+}
+
+// UI Management
+function readControls() {
+  return {
+    view: document.querySelector('input[name="view"]:checked').value,
+    density: document.querySelector('input[name="density"]:checked').value,
+    colorBy: document.querySelector('input[name="colorBy"]:checked').value,
+    hideWeak: document.getElementById('hideWeak').checked,
+    hideIsolates: document.getElementById('hideIsolates').checked,
+    hideSingleEmail: document.getElementById('hideSingleEmail').checked,
+  };
+}
+
+function applyPreset(name) {
+  // Remove active class from all buttons
+  document.querySelectorAll('.preset-bar button').forEach(btn => btn.classList.remove('active'));
+  document.querySelector('[data-preset="' + name + '"]').classList.add('active');
+
+  const presets = {
+    balanced: { view: "overview", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    people: { view: "people", density: "minimal", hideWeak: true, hideIsolates: false, colorBy: "participant" },
+    time: { view: "time", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    communities: { view: "communities", density: "dense", hideWeak: false, hideIsolates: true, colorBy: "community" },
+    isolates: { view: "isolates", density: "dense", hideWeak: false, hideIsolates: false, colorBy: "volume" }
+  };
+
+  const preset = presets[name];
+  if (preset) {
+    document.querySelector('input[name="view"][value="' + preset.view + '"]').checked = true;
+    document.querySelector('input[name="density"][value="' + preset.density + '"]').checked = true;
+    document.querySelector('input[name="colorBy"][value="' + preset.colorBy + '"]').checked = true;
+    document.getElementById('hideWeak').checked = preset.hideWeak;
+    document.getElementById('hideIsolates').checked = preset.hideIsolates;
+  }
+}
+
+let network;
+function render() {
+  try {
+    const controls = readControls();
+    console.log('Rendering with controls:', controls);
+    
+    const { nodesVis, edgesVis } = build(
+      controls.view, controls.density, controls.colorBy,
+      controls.hideWeak, controls.hideIsolates, controls.hideSingleEmail
+    );
+
+    console.log('Nodes:', nodesVis.length, 'Edges:', edgesVis.length);
+
+    const container = document.getElementById('network');
+    const data = { nodes: new vis.DataSet(nodesVis), edges: new vis.DataSet(edgesVis) };
+  
+  const options = {
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 1000, updateInterval: 25 },
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -26,
+        centralGravity: 0.005,
+        springLength: 230,
+        springConstant: 0.18,
+        damping: 0.15,
+        avoidOverlap: 0.1
+      },
+      maxVelocity: 30,
+      minVelocity: 0.1,
+      timestep: 0.35
+    },
+    interaction: { 
+      hover: true, 
+      multiselect: true, 
+      tooltipDelay: 300,
+      dragNodes: false,
+      zoomView: true,
+      dragView: true
+    },
+    edges: { 
+      smooth: { enabled: false }
+    },
+    nodes: {
+      chosen: {
+        node: function(values, id, selected, hovering) {
+          values.shadow = hovering;
+          values.shadowSize = hovering ? 10 : 5;
+        }
+      }
+    }
+  };
+
+    if (network) network.destroy();
+    network = new vis.Network(container, data, options);
+    
+    console.log('Network created successfully');
+    
+    // Add click handler for detailed info
+    network.on("click", function(params) {
+      if (params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        const cluster = CLUSTERS.find(c => c.id === nodeId);
+        if (cluster) {
+          showNodeInfo(cluster, params.pointer.DOM);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error rendering network:', error);
+    document.getElementById('network').innerHTML = '<div style="padding: 20px; color: red;">Error loading visualization: ' + error.message + '</div>';
+  }
+}
+
+function showNodeInfo(cluster, position) {
+  const panel = document.getElementById('info-panel');
+  const displayName = cluster.label || cluster.id;
+  panel.innerHTML = 
+    "<h4>" + displayName + "</h4>" +
+    "<p><strong>Emails:</strong> " + cluster.emails + "</p>" +
+    "<p><strong>Key Participants:</strong><br/>" + cluster.participants.slice(0, 5).join('<br/>') + "</p>" +
+    (cluster.sample_subjects ? "<p><strong>Sample Subjects:</strong><br/>" + cluster.sample_subjects.slice(0, 3).join('<br/>') + "</p>" : "");
+  panel.style.display = 'block';
+  panel.style.left = Math.min(position.x + 10, window.innerWidth - 320) + 'px';
+  panel.style.top = Math.min(position.y + 10, window.innerHeight - 200) + 'px';
+  
+  setTimeout(function() { panel.style.display = 'none'; }, 5000);
+}
+
+// Event Listeners
+document.getElementById('apply').addEventListener('click', render);
+document.querySelectorAll('.preset-bar button').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    applyPreset(btn.getAttribute('data-preset'));  
+    render();
+  });
+});
+
+// Initialize
+console.log('vis library loaded:', typeof vis !== 'undefined');
+console.log('CLUSTERS data:', CLUSTERS.length, 'clusters');
+applyPreset('balanced');
+render();
+</script>
+
+</body>
+</html>

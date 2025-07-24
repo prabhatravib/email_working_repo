@@ -1,0 +1,379 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Enhanced Email Inbox Graph</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { display: flex; background: #f8fafc; }
+    #sidebar {
+      width: 350px; padding: 20px; background: white; border-right: 1px solid #e2e8f0;
+      box-sizing: border-box; overflow-y: auto; box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+    }
+    #network { flex: 1; position: relative; }
+    h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; color: #1a202c; }
+    .stats { background: #f7fafc; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; }
+    .stats div { margin-bottom: 4px; }
+    fieldset { border: 1px solid #e2e8f0; margin-bottom: 16px; padding: 12px 16px; border-radius: 8px; background: #fafafa; }
+    legend { padding: 0 8px; font-weight: 500; color: #4a5568; }
+    .preset-bar { margin-bottom: 20px; }
+    .preset-bar button {
+      margin: 0 6px 6px 0; padding: 8px 12px; border: 1px solid #cbd5e0; background: white;
+      border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;
+    }
+    .preset-bar button:hover { background: #f7fafc; border-color: #4299e1; }
+    .preset-bar button.active { background: #4299e1; color: white; border-color: #4299e1; }
+    label { font-size: 14px; display: block; margin-bottom: 8px; cursor: pointer; }
+    input[type="radio"], input[type="checkbox"] { margin-right: 8px; }
+    #apply { 
+      width: 100%; padding: 12px; background: #4299e1; color: white; border: none;
+      border-radius: 6px; cursor: pointer; font-weight: 500; font-size: 14px;
+    }
+    #apply:hover { background: #3182ce; }
+    .legend { font-size: 13px; margin-top: 20px; color: #4a5568; }
+    .legend ul { padding-left: 18px; margin: 6px 0; }
+    .info-panel {
+      position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.95);
+      padding: 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      font-size: 12px; max-width: 300px; display: none;
+    }
+  </style>
+  <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link href="https://unpkg.com/vis-network@9.1.2/styles/vis-network.min.css" rel="stylesheet" />
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>📧 Email Inbox Graph</h1>
+  
+  <div class="stats">
+    <div><strong>2847</strong> total emails</div>
+    <div><strong>59</strong> clusters found</div>
+    <div><strong>Period:</strong> 2014-10-15 to 2025-07-24</div>
+  </div>
+
+  <div class="preset-bar">
+    <button data-preset="balanced">🎯 Balanced</button>
+    <button data-preset="people">👥 People Focus</button>
+    <button data-preset="time">⏰ Timeline</button>
+    <button data-preset="communities">🏘️ Communities</button>
+    <button data-preset="isolates">🔍 Isolates</button>
+  </div>
+
+  <fieldset>
+    <legend>📊 Primary View</legend>
+    <label><input type="radio" name="view" value="overview" checked> Overview (Hybrid)</label>
+    <label><input type="radio" name="view" value="people"> People Connections</label>
+    <label><input type="radio" name="view" value="time"> Time-based Clustering</label>
+    <label><input type="radio" name="view" value="isolates"> Show Isolates Only</label>
+    <label><input type="radio" name="view" value="communities"> Community Detection</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>🎚️ Display Density</legend>
+    <label><input type="radio" name="density" value="minimal"> Minimal (Key connections)</label>
+    <label><input type="radio" name="density" value="normal" checked> Normal</label>
+    <label><input type="radio" name="density" value="dense"> Dense (Show all)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>🎨 Node Coloring</legend>
+    <label><input type="radio" name="colorBy" value="community" checked> By Community</label>
+    <label><input type="radio" name="colorBy" value="participant"> By Top Participant</label>
+    <label><input type="radio" name="colorBy" value="volume"> By Email Volume</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>🔧 Filters</legend>
+    <label><input type="checkbox" id="hideWeak"> Hide weak connections</label>
+    <label><input type="checkbox" id="hideIsolates"> Hide isolated nodes</label>
+    <label><input type="checkbox" id="hideSingleEmail"> Hide single-email clusters</label>
+  </fieldset>
+
+  <button id="apply">🔄 Update Graph</button>
+
+  <div class="legend">
+    <p><strong>💡 How to read this graph:</strong></p>
+    <ul>
+      <li><strong>Nodes:</strong> Email conversation clusters</li>
+      <li><strong>Size:</strong> Number of emails in cluster</li>
+      <li><strong>Connections:</strong> Shared participants + timing</li>
+      <li><strong>Solid lines:</strong> Strong relationships</li>
+      <li><strong>Dashed lines:</strong> Weak relationships</li>
+    </ul>
+  </div>
+</div>
+
+<div id="network"></div>
+<div id="info-panel" class="info-panel"></div>
+
+<script>
+const CLUSTERS = [{"id":"Security Alert For Prabhatravibgmailcom","emails":51,"participants":["no-reply@accounts.google.com","bprabhatravi@gmail.com"],"spanDays":[2364,3933],"sample_subjects":["Security alert for prabhatravib@gmail.com"]},{"id":"Prabhat Your Weekly Ticket Is","emails":73,"participants":["bprabhatravi@gmail.com","noreply@email.amctheatres.com"],"spanDays":[3381,3928],"sample_subjects":["Prabhat, Your Weekly Ticket Is Here"]},{"id":"Get Started","emails":3,"participants":["bprabhatravi@gmail.com","support@openai.com"],"spanDays":[3914,3916],"sample_subjects":["Get started"]},{"id":"Security Alert","emails":12,"participants":["no-reply@accounts.google.com","bprabhatravi@gmail.com"],"spanDays":[1105,3935],"sample_subjects":["Security alert"]},{"id":"Important Build Failed On Your","emails":19,"participants":["bprabhatravi@gmail.com","no-reply@render.com"],"spanDays":[3889,3934],"sample_subjects":["[Important] Build failed on your Render account"]},{"id":"Amazon Web Services You Have","emails":5,"participants":["no-reply-aws@amazon.com","bprabhatravi@gmail.com"],"spanDays":[3717,3891],"sample_subjects":["Amazon Web Services: You have opened a new Support case:\n 173456340400388","Amazon Web Services: You have opened a new Support case:\n 174960135100945","Amazon Web Services: You have opened a new Support case:\n 173454663800614","Amazon Web Services: You have opened a new Support case:\n 173456408900412","Amazon Web Services: You have opened a new Support case:\n 173456403800823"]},{"id":"Build Failed For Pitextroot","emails":465,"participants":["bprabhatravi@gmail.com","no-reply@render.com"],"spanDays":[3881,3933],"sample_subjects":["build failed for pitext-root"]},{"id":"Utf8B8Joisbhcmvhdcbuzxdzisbxzsboyxzligegbg9Hbibvchbvcnr1 Utf8Bbml0Esbkzxnpz25Lzcbmb3Igew91","emails":5,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3555,3683],"sample_subjects":["=?UTF-8?B?8J+OiSBHcmVhdCBuZXdzISBXZSBoYXZlIGEgbG9hbiBvcHBvcnR1?=\n =?UTF-8?B?bml0eSBkZXNpZ25lZCBmb3IgeW91?="]},{"id":"Prabhat Top Matching Jobs For","emails":221,"participants":["jobmessenger@monster.com.sg","prabhatravib@gmail.com","bprabhatravi@gmail.com"],"spanDays":[730,1418],"sample_subjects":["Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants"]},{"id":"Support Re Indeed Support Other","emails":2,"participants":["support@indeed.zendesk.com","bprabhatravi@gmail.com","support+id2642410@indeed.zendesk.com"],"spanDays":[1107,1109],"sample_subjects":["[Support] Re: Indeed Support - Other... - Web Scraping the Indeed website","[Support] Re: Indeed Support - Other... - Web Scraping the Indeed\n website"]},{"id":"Information For Abc We Offer","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3604,3681],"sample_subjects":["*** Information for Abc - we offer quick funding"]},{"id":"Dailyo Newsletter","emails":147,"participants":["bprabhatravi@gmail.com","update@intoday.in"],"spanDays":[91,263],"sample_subjects":["DailyO Newsletter"]},{"id":"We Respect The Credit Score","emails":5,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3564,3696],"sample_subjects":["We respect the credit score you built-Checking won't affect it"]},{"id":"Amazon Web Services Billing Statement","emails":7,"participants":["no-reply-aws@amazon.com","bprabhatravi@gmail.com"],"spanDays":[3732,3912],"sample_subjects":["Amazon Web Services Billing Statement Available [Account:\n 183295408836]"]},{"id":"You Dont Want To Miss","emails":3,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3768,3873],"sample_subjects":["You DON'T want to miss this!","You don't want to miss this =?UTF-8?B?8J+RgA==?="]},{"id":"Newspresso 10 News Stories You","emails":96,"participants":["bprabhatravi@gmail.com","update@intoday.in"],"spanDays":[0,263],"sample_subjects":["NewsPresso, 10 news stories you need to know about"]},{"id":"Utf8Bqwjjlcb5B3Vyig9Wdglvbnmgyxjlihdhaxrpbmfigjrhzxqgc3Rh Utf8Bcnrlzcbozxjl","emails":4,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3557,3646],"sample_subjects":["=?UTF-8?B?QWJjLCB5b3VyIG9wdGlvbnMgYXJlIHdhaXRpbmfigJRHZXQgc3Rh?=\n =?UTF-8?B?cnRlZCBoZXJl?="]},{"id":"Update For Abc Ready To","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3633,3674],"sample_subjects":["Update for Abc: Ready to take financial control?"]},{"id":"Dont Miss Out On 70","emails":2,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3795,3827],"sample_subjects":["Don't miss out on $70 off =?UTF-8?B?8J+RgA==?="]},{"id":"Prabhat Want To Chat With","emails":2,"participants":["noreply@myzamana.com","bprabhatravi@gmail.com"],"spanDays":[706,796],"sample_subjects":["Prabhat, want to chat with people?","Prabhat, want to chat with someone new?"]},{"id":"Time Is Running Out To","emails":2,"participants":["aws-marketing-email-replies@amazon.com","bprabhatravi@gmail.com","support@gmat.economist.com"],"spanDays":[1069,3863],"sample_subjects":["Time is running out to dive deep on cloud security at AWS\n re:Inforce 2025","Time is running out to claim 15 percent off!"]},{"id":"Utf8Qc2Bb_Take_Action_Abc__Were_Excited_To_Show_You_You Utf8Qr_Low_Monthly_Rate","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3602,3665],"sample_subjects":["=?UTF-8?Q?=C2=BB_Take_action,_Abc_-_we're_excited_to_show_you_you?=\n =?UTF-8?Q?r_low_monthly_rate?="]},{"id":"Newspresso Top 10 News Stories","emails":23,"participants":["bprabhatravi@gmail.com","update@intoday.in"],"spanDays":[153,264],"sample_subjects":["NewsPresso, Top 10 news stories of the day"]},{"id":"Security Alert For Your Linked","emails":23,"participants":["no-reply@accounts.google.com","bprabhatravi@gmail.com"],"spanDays":[850,2107],"sample_subjects":["Security alert for your linked Google account","Security alert for your linked Google Account"]},{"id":"Deploy Failed For Pitextroot","emails":29,"participants":["bprabhatravi@gmail.com","no-reply@render.com"],"spanDays":[3881,3889],"sample_subjects":["deploy failed for pitext-root"]},{"id":"Only Hours Left To Claim","emails":9,"participants":["bprabhatravi@gmail.com","support@gmat.economist.com","gmat@economist.com"],"spanDays":[271,1038],"sample_subjects":["Only hours left to claim this offer!","Only hours left to claim this offer","Only hours left to claim our BEST offer ever","Only hours left to claim 20 PERCENT OFF"]},{"id":"My Son Was Tortured","emails":2,"participants":["bprabhatravi@gmail.com","mail@change.org"],"spanDays":[259,280],"sample_subjects":["My Son Was Tortured"]},{"id":"Salary Inr 1000000 1500000 Pa","emails":9,"participants":["prabhatravib@gmail.com","bprabhatravi@gmail.com","info@monsterindia.com","opportunities@monsterindia.com"],"spanDays":[792,1306],"sample_subjects":["Salary: INR 10,00,000 - 15,00,000 P.A: L&T, Dlf, Nissan, Siemens, Tata, Aditya Birla (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A  (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A : JP Morgan, Prokarma, Larsen and toubro , Oracal, UST, IBM,  (Source: Monster)"]},{"id":"Gmat Practice Test Sale Ends","emails":2,"participants":["bprabhatravi@gmail.com","info@veritasprep.com"],"spanDays":[483,513],"sample_subjects":["GMAT Practice Test Sale Ends Next Week!","GMAT Practice Test Sale Ends Next Week"]},{"id":"Youtube Responded","emails":2,"participants":["bprabhatravi@gmail.com","mail@change.org"],"spanDays":[417,427],"sample_subjects":["YouTube Responded"]},{"id":"Your Google Account Was Recovered","emails":3,"participants":["no-reply@accounts.google.com","bprabhatravi@gmail.com"],"spanDays":[3373,3762],"sample_subjects":["Your Google Account was recovered successfully"]},{"id":"Abc Were Excited To Share","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3619,3644],"sample_subjects":["Abc, we're excited to share this update with you"]},{"id":"Utf8Qthe_Easiest_Way_To_Launch_Scalable_Web_Servicesc2A0","emails":3,"participants":["bprabhatravi@gmail.com","hello@render.com"],"spanDays":[3890,3894],"sample_subjects":["=?utf-8?Q?The_easiest_way_to_launch_scalable_web_services=C2=A0?="]},{"id":"See Why Fans Love Fubo","emails":2,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3797,3823],"sample_subjects":["See why fans LOVE Fubo! =?UTF-8?B?8J+kqQ==?=","See why fans love Fubo! =?UTF-8?B?8J+kqQ==?="]},{"id":"Newspresso Top 7 News Stories","emails":7,"participants":["bprabhatravi@gmail.com","update@intoday.in"],"spanDays":[244,254],"sample_subjects":["NewsPresso, Top 7 news stories of the day"]},{"id":"Abc Your Complimentary Estimate Is","emails":5,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3612,3738],"sample_subjects":["Abc, your complimentary estimate is only a few clicks away"]},{"id":"Abc Would You Like To","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3543,3578],"sample_subjects":["Abc, would you like to explore your options today?"]},{"id":"Abc Please Read Youre Invited","emails":3,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3616,3673],"sample_subjects":["Abc, please read: You're invited to review your loan options"]},{"id":"Please Verify Your Account","emails":2,"participants":["bprabhatravi@gmail.com","accounts@applyweb.com"],"spanDays":[364,364],"sample_subjects":["Please verify your account"]},{"id":"Great News Abc Youre Invited","emails":2,"participants":["bprabhatravi@gmail.com","support@mail.bhgfinancial.com"],"spanDays":[3547,3571],"sample_subjects":["Great news, Abc! You're invited to see this offer"]},{"id":"The ball is in your court...","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3929,3929],"sample_subjects":["The ball is in your court..."]},{"id":"=?UTF-8?B?RG9u4oCZdCBtaXNzIHRoZXNlIG11c3Qtc2VlcyDwn5GA?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3933,3933],"sample_subjects":["=?UTF-8?B?RG9u4oCZdCBtaXNzIHRoZXNlIG11c3Qtc2VlcyDwn5GA?="]},{"id":"Your $70 discount awaits =?UTF-8?B?8J+RgA==?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3922,3922],"sample_subjects":["Your $70 discount awaits =?UTF-8?B?8J+RgA==?="]},{"id":"=?UTF-8?B?4pqg77iP?= REMINDER: get $70 off the best live sports","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3930,3930],"sample_subjects":["=?UTF-8?B?4pqg77iP?= REMINDER: get $70 off the best live sports"]},{"id":"Your exclusive gift awaits! =?UTF-8?B?8J+OgfCfpbM=?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3920,3920],"sample_subjects":["Your exclusive gift awaits! =?UTF-8?B?8J+OgfCfpbM=?="]},{"id":"Kick off your week with HUGE savings","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3918,3918],"sample_subjects":["Kick off your week with HUGE savings"]},{"id":"See what =?UTF-8?B?ZXZlcnlvbmXigJlzIHdhdGNoaW5nIHRoaXMgSnVseSDwn5GA?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3921,3921],"sample_subjects":["See what =?UTF-8?B?ZXZlcnlvbmXigJlzIHdhdGNoaW5nIHRoaXMgSnVseSDwn5GA?="]},{"id":"Start your week with $80 off live sports","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3855,3855],"sample_subjects":["Start your week with $80 off live sports"]},{"id":"Resolved 174960135100945: wrongly closed my account","emails":1,"participants":["no-reply-aws@amazon.com","bprabhatravi@gmail.com"],"spanDays":[3902,3902],"sample_subjects":["Resolved 174960135100945: wrongly closed my account"]},{"id":"Long weekend. Big savings.","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3873,3873],"sample_subjects":["Long weekend. Big savings."]},{"id":"REMINDER: $80 off","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3846,3846],"sample_subjects":["REMINDER: $80 off"]},{"id":"Don't be fooled! =?UTF-8?B?8J+Ruw==?= Stream for FREE!","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3821,3821],"sample_subjects":["Don't be fooled! =?UTF-8?B?8J+Ruw==?= Stream for FREE!"]},{"id":"Free streaming? Yes, please! =?UTF-8?B?8J+ZjA==?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3828,3828],"sample_subjects":["Free streaming? Yes, please! =?UTF-8?B?8J+ZjA==?="]},{"id":"See why customers love Fubo! =?UTF-8?B?8J+RgA==?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3785,3785],"sample_subjects":["See why customers love Fubo! =?UTF-8?B?8J+RgA==?="]},{"id":"Don't miss these savings =?UTF-8?B?8J+RgA==?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3741,3741],"sample_subjects":["Don't miss these savings =?UTF-8?B?8J+RgA==?="]},{"id":"Validate your technical skills and cloud expertise","emails":1,"participants":["aws-marketing-email-replies@amazon.com","bprabhatravi@gmail.com"],"spanDays":[3795,3795],"sample_subjects":["Validate your technical skills and cloud expertise"]},{"id":"=?UTF-8?B?TGV04oCZcyB3YXRjaCBzb21ldGhpbmcgbmV3ISDwn5O6?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3777,3777],"sample_subjects":["=?UTF-8?B?TGV04oCZcyB3YXRjaCBzb21ldGhpbmcgbmV3ISDwn5O6?="]},{"id":"Smarter chatbots, better data pipelines and the right data tools\n for AWS","emails":1,"participants":["aws-marketing-email-replies@amazon.com","bprabhatravi@gmail.com"],"spanDays":[3799,3799],"sample_subjects":["Smarter chatbots, better data pipelines and the right data tools\n for AWS"]},{"id":"Watch Fubo for FREE! =?UTF-8?B?8J+kkQ==?=","emails":1,"participants":["stream@newsletters.fubo.tv","bprabhatravi@gmail.com"],"spanDays":[3789,3789],"sample_subjects":["Watch Fubo for FREE! =?UTF-8?B?8J+kkQ==?="]}];
+const DEFAULTS = {"alpha_overview":0.7,"tau":14,"strong_w":0.3,"densityPerc":{"minimal":0.1,"normal":0.25,"dense":0.8}};
+
+// Enhanced utility functions
+function jaccard(a, b) {
+  const A = new Set(a), B = new Set(b);
+  if (A.size === 0 && B.size === 0) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+function timeDecay(deltaDays, tau) {
+  return Math.exp(-deltaDays / tau);
+}
+
+function midpoint(span) {
+  return (span[0] + span[1]) / 2.0;
+}
+
+function topPercentEdges(edges, perc) {
+  if (perc >= 1.0) return edges;
+  const sorted = [...edges].sort((a, b) => b.w - a.w);
+  const keep = Math.max(1, Math.round(sorted.length * perc));
+  return sorted.slice(0, keep);
+}
+
+function components(nodes, edges) {
+  const id2idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
+  const adj = nodes.map(() => []);
+  edges.forEach(e => {
+    const u = id2idx[e.from], v = id2idx[e.to];
+    if (u !== undefined && v !== undefined) {
+      adj[u].push(v); adj[v].push(u);
+    }
+  });
+  const comp = Array(nodes.length).fill(-1);
+  let cid = 0;
+  const nodeToComp = {};
+  for (let i = 0; i < nodes.length; i++) {
+    if (comp[i] !== -1) continue;
+    const stack = [i];
+    comp[i] = cid;
+    while (stack.length) {
+      const x = stack.pop();
+      nodeToComp[nodes[x].id] = cid;
+      for (const y of adj[x]) if (comp[y] === -1) {
+        comp[y] = cid; stack.push(y);
+      }
+    }
+    cid++;
+  }
+  return nodeToComp;
+}
+
+function build(view, densityKey, colorBy, hideWeak, hideIsolates, hideSingleEmail) {
+  const tau = DEFAULTS.tau;
+  const strongW = DEFAULTS.strong_w;
+  const perc = DEFAULTS.densityPerc[densityKey || "normal"] || 0.25;
+
+  // Filter clusters
+  let filteredClusters = CLUSTERS;
+  if (hideSingleEmail) {
+    filteredClusters = filteredClusters.filter(c => c.emails > 1);
+  }
+
+  let edges = [];
+  if (view !== "isolates") {
+    for (let i = 0; i < filteredClusters.length; i++) {
+      for (let j = i + 1; j < filteredClusters.length; j++) {
+        const A = filteredClusters[i], B = filteredClusters[j];
+        const people = jaccard(A.participants, B.participants);
+        const ta = midpoint(A.spanDays), tb = midpoint(B.spanDays);
+        const dt = Math.abs(tb - ta);
+        const time = timeDecay(dt, tau);
+
+        let w;
+        if (view === "people") w = people;
+        else if (view === "time") w = time;
+        else w = DEFAULTS.alpha_overview * people + (1 - DEFAULTS.alpha_overview) * time;
+
+        if (w > 0.01) {  // Minimum threshold
+          edges.push({ from: A.id, to: B.id, w, people, time, dt });
+        }
+      }
+    }
+    edges = topPercentEdges(edges, perc);
+  }
+
+  if (hideWeak) edges = edges.filter(e => e.w >= strongW);
+
+  // Calculate node degrees
+  const degree = Object.fromEntries(filteredClusters.map(c => [c.id, 0]));
+  edges.forEach(e => { 
+    if (degree[e.from] !== undefined) degree[e.from] += e.w;
+    if (degree[e.to] !== undefined) degree[e.to] += e.w;
+  });
+  const maxDeg = Math.max(1, ...Object.values(degree));
+
+  // Enhanced color palette
+  const palette = [
+    "#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6",
+    "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1"
+  ];
+  
+  const nodeToComp = components(filteredClusters, edges);
+
+  // Create visual nodes
+  const nodesVis = filteredClusters
+    .filter(n => !(hideIsolates && degree[n.id] === 0))
+    .map(n => {
+      const d = degree[n.id];
+      const baseSize = Math.max(20, Math.min(60, 20 + Math.sqrt(n.emails) * 8));
+      const size = baseSize + (d / maxDeg) * 20;
+      
+      let color;
+      if (colorBy === "participant") {
+        const tp = n.participants[0] || "unknown";
+        const hash = tp.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0);
+        color = palette[Math.abs(hash) % palette.length];
+      } else if (colorBy === "volume") {
+        const intensity = Math.min(n.emails / 50, 1);
+        const redValue = Math.round(255 * intensity);
+        const blueValue = Math.round(255 * (1 - intensity));
+        color = "rgb(" + redValue + ", 100, " + blueValue + ")";
+      } else {
+        const comp = nodeToComp[n.id] || 0;
+        color = palette[comp % palette.length];
+      }
+
+      return {
+        id: n.id,
+        label: n.id.length > 30 ? n.id.substring(0, 30) + "..." : n.id,
+        title: "<b>" + n.id + "</b><br/>" + n.emails + " emails<br/>Participants: " + n.participants.slice(0, 3).join(", ") + (n.participants.length > 3 ? "..." : ""),
+        value: n.emails,
+        size,
+        color,
+        font: { size: Math.max(12, Math.min(16, 8 + Math.sqrt(n.emails))), face: "Inter, Arial" }
+      };
+    });
+
+  // Create visual edges
+  const visibleIds = new Set(nodesVis.map(n => n.id));
+  const edgesVis = edges
+    .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
+    .map(e => {
+      const strong = e.w >= strongW;
+      return {
+        from: e.from, to: e.to,
+        value: e.w,
+        width: strong ? 2 + 4 * e.w : 1 + 2 * e.w,
+        color: strong ? "#3B82F6" : "rgba(59, 130, 246, 0.3)",
+        dashes: !strong,
+        smooth: { enabled: true, type: "dynamic", roundness: 0.3 },
+        title: "Strength: " + e.w.toFixed(2) + "<br/>People overlap: " + e.people.toFixed(2) + "<br/>Time proximity: " + e.time.toFixed(2) + " (" + e.dt + " days apart)"
+      };
+    });
+
+  return { nodesVis, edgesVis };
+}
+
+// UI Management
+function readControls() {
+  return {
+    view: document.querySelector('input[name="view"]:checked').value,
+    density: document.querySelector('input[name="density"]:checked').value,
+    colorBy: document.querySelector('input[name="colorBy"]:checked').value,
+    hideWeak: document.getElementById('hideWeak').checked,
+    hideIsolates: document.getElementById('hideIsolates').checked,
+    hideSingleEmail: document.getElementById('hideSingleEmail').checked,
+  };
+}
+
+function applyPreset(name) {
+  // Remove active class from all buttons
+  document.querySelectorAll('.preset-bar button').forEach(btn => btn.classList.remove('active'));
+  document.querySelector('[data-preset="' + name + '"]').classList.add('active');
+
+  const presets = {
+    balanced: { view: "overview", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    people: { view: "people", density: "minimal", hideWeak: true, hideIsolates: false, colorBy: "participant" },
+    time: { view: "time", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    communities: { view: "communities", density: "dense", hideWeak: false, hideIsolates: true, colorBy: "community" },
+    isolates: { view: "isolates", density: "dense", hideWeak: false, hideIsolates: false, colorBy: "volume" }
+  };
+
+  const preset = presets[name];
+  if (preset) {
+    document.querySelector('input[name="view"][value="' + preset.view + '"]').checked = true;
+    document.querySelector('input[name="density"][value="' + preset.density + '"]').checked = true;
+    document.querySelector('input[name="colorBy"][value="' + preset.colorBy + '"]').checked = true;
+    document.getElementById('hideWeak').checked = preset.hideWeak;
+    document.getElementById('hideIsolates').checked = preset.hideIsolates;
+  }
+}
+
+let network;
+function render() {
+  const controls = readControls();
+  const { nodesVis, edgesVis } = build(
+    controls.view, controls.density, controls.colorBy,
+    controls.hideWeak, controls.hideIsolates, controls.hideSingleEmail
+  );
+
+  const container = document.getElementById('network');
+  const data = { nodes: new vis.DataSet(nodesVis), edges: new vis.DataSet(edgesVis) };
+  
+  const options = {
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 300 },
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: 150,
+        springConstant: 0.05,
+        damping: 0.1,
+        avoidOverlap: 0.2
+      }
+    },
+    interaction: { hover: true, multiselect: true, tooltipDelay: 200 },
+    edges: { smooth: { enabled: true, type: "dynamic", roundness: 0.3 } }
+  };
+
+  if (network) network.destroy();
+  network = new vis.Network(container, data, options);
+  
+  // Add click handler for detailed info
+  network.on("click", function(params) {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      const cluster = CLUSTERS.find(c => c.id === nodeId);
+      if (cluster) {
+        showNodeInfo(cluster, params.pointer.DOM);
+      }
+    }
+  });
+}
+
+function showNodeInfo(cluster, position) {
+  const panel = document.getElementById('info-panel');
+  panel.innerHTML = 
+    "<h4>" + cluster.id + "</h4>" +
+    "<p><strong>Emails:</strong> " + cluster.emails + "</p>" +
+    "<p><strong>Key Participants:</strong><br/>" + cluster.participants.slice(0, 5).join('<br/>') + "</p>" +
+    (cluster.sample_subjects ? "<p><strong>Sample Subjects:</strong><br/>" + cluster.sample_subjects.slice(0, 3).join('<br/>') + "</p>" : "");
+  panel.style.display = 'block';
+  panel.style.left = Math.min(position.x + 10, window.innerWidth - 320) + 'px';
+  panel.style.top = Math.min(position.y + 10, window.innerHeight - 200) + 'px';
+  
+  setTimeout(function() { panel.style.display = 'none'; }, 5000);
+}
+
+// Event Listeners
+document.getElementById('apply').addEventListener('click', render);
+document.querySelectorAll('.preset-bar button').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    applyPreset(btn.getAttribute('data-preset'));  
+    render();
+  });
+});
+
+// Initialize
+applyPreset('balanced');
+render();
+</script>
+
+</body>
+</html>

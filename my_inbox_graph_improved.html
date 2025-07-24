@@ -1,0 +1,419 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Enhanced Email Inbox Graph</title>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { display: flex; background: #fafbfc; }
+    #sidebar {
+      width: 320px; padding: 24px; background: #ffffff; border-right: 1px solid #d1d5db;
+      box-sizing: border-box; overflow-y: auto; box-shadow: 1px 0 3px rgba(0,0,0,0.08);
+    }
+    #network { flex: 1; position: relative; background: #ffffff; }
+    h1 { margin: 0 0 16px; font-size: 18px; font-weight: 700; color: #111827; letter-spacing: -0.025em; }
+    .stats { 
+      background: #f3f4f6; padding: 16px; border-radius: 4px; margin-bottom: 24px; 
+      font-size: 13px; border-left: 3px solid #6366f1; color: #374151;
+    }
+    .stats div { margin-bottom: 6px; font-weight: 500; }
+    fieldset { 
+      border: 1px solid #d1d5db; margin-bottom: 20px; padding: 16px; border-radius: 4px; 
+      background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    legend { padding: 0 8px; font-weight: 600; color: #374151; font-size: 13px; }
+    .preset-bar { margin-bottom: 24px; }
+    .preset-bar button {
+      margin: 0 4px 8px 0; padding: 6px 12px; border: 1px solid #d1d5db; background: #ffffff;
+      border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 500; transition: all 0.15s;
+      color: #374151;
+    }
+    .preset-bar button:hover { background: #f9fafb; border-color: #6366f1; color: #6366f1; }
+    .preset-bar button.active { background: #6366f1; color: white; border-color: #6366f1; }
+    label { font-size: 13px; display: block; margin-bottom: 10px; cursor: pointer; color: #374151; font-weight: 500; }
+    input[type="radio"], input[type="checkbox"] { margin-right: 8px; }
+    #apply { 
+      width: 100%; padding: 10px; background: #6366f1; color: white; border: none;
+      border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #apply:hover { background: #4f46e5; }
+    .legend { font-size: 12px; margin-top: 24px; color: #6b7280; }
+    .legend ul { padding-left: 16px; margin: 8px 0; }
+    .legend li { margin-bottom: 4px; }
+    .info-panel {
+      position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.98);
+      padding: 16px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      font-size: 12px; max-width: 320px; display: none; border: 1px solid #e5e7eb;
+    }
+  </style>
+  <script src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link href="https://unpkg.com/vis-network@9.1.2/styles/vis-network.min.css" rel="stylesheet" />
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>Email Inbox Analysis</h1>
+  
+  <div class="stats">
+    <div><strong>2847</strong> total emails</div>
+    <div><strong>49</strong> clusters found</div>
+    <div><strong>Period:</strong> 2011-02-11 to 2025-07-23</div>
+  </div>
+
+  <div class="preset-bar">
+    <button data-preset="balanced">Balanced</button>
+    <button data-preset="people">People Focus</button>
+    <button data-preset="time">Timeline</button>
+    <button data-preset="communities">Communities</button>
+    <button data-preset="isolates">Isolates</button>
+  </div>
+
+  <fieldset>
+    <legend>Primary View</legend>
+    <label><input type="radio" name="view" value="overview" checked> Overview</label>
+    <label><input type="radio" name="view" value="people"> People Connections</label>
+    <label><input type="radio" name="view" value="time"> Time-based Clustering</label>
+    <label><input type="radio" name="view" value="isolates"> Show Isolates Only</label>
+    <label><input type="radio" name="view" value="communities"> Community Detection</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Display Density</legend>
+    <label><input type="radio" name="density" value="minimal"> Minimal</label>
+    <label><input type="radio" name="density" value="normal" checked> Normal</label>
+    <label><input type="radio" name="density" value="dense"> Dense</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Node Coloring</legend>
+    <label><input type="radio" name="colorBy" value="community" checked> By Community</label>
+    <label><input type="radio" name="colorBy" value="participant"> By Top Participant</label>
+    <label><input type="radio" name="colorBy" value="volume"> By Email Volume</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Filters</legend>
+    <label><input type="checkbox" id="hideWeak"> Hide weak connections</label>
+    <label><input type="checkbox" id="hideIsolates"> Hide isolated nodes</label>
+    <label><input type="checkbox" id="hideSingleEmail"> Hide single-email clusters</label>
+  </fieldset>
+
+  <button id="apply">Update Graph</button>
+
+  <div class="legend">
+    <p><strong>Graph Legend:</strong></p>
+    <ul>
+      <li><strong>Nodes:</strong> Email conversation clusters</li>
+      <li><strong>Size:</strong> Number of emails in cluster</li>
+      <li><strong>Connections:</strong> Shared participants + timing</li>
+      <li><strong>Solid lines:</strong> Strong relationships</li>
+      <li><strong>Dashed lines:</strong> Weak relationships</li>
+    </ul>
+  </div>
+</div>
+
+<div id="network"></div>
+<div id="info-panel" class="info-panel"></div>
+
+<script>
+const CLUSTERS = [{"id":"Prabhat Top Matching Jobs For","emails":221,"participants":["prabhatravib@gmail.com","jobmessenger@monster.com.sg"],"spanDays":[2072,2760],"sample_subjects":["Prabhat, Top matching jobs for Business Analyst, Datawarehousing Consultants"]},{"id":"Support Re Indeed Support Other","emails":2,"participants":["support@indeed.zendesk.com","support+id2642410@indeed.zendesk.com"],"spanDays":[2449,2450],"sample_subjects":["[Support] Re: Indeed Support - Other... - Web Scraping the Indeed\n website","[Support] Re: Indeed Support - Other... - Web Scraping the Indeed website"]},{"id":"Time Is Running Out To","emails":2,"participants":["aws-marketing-email-replies@amazon.com","support@gmat.economist.com"],"spanDays":[2410,5205],"sample_subjects":["Time is running out to claim 15 percent off!","Time is running out to dive deep on cloud security at AWS\n re:Inforce 2025"]},{"id":"Only Hours Left To Claim","emails":9,"participants":["gmat@economist.com","support@gmat.economist.com"],"spanDays":[1612,2379],"sample_subjects":["Only hours left to claim our BEST offer ever","Only hours left to claim this offer!","Only hours left to claim 20 PERCENT OFF","Only hours left to claim this offer"]},{"id":"Salary Inr 1000000 1500000 Pa","emails":9,"participants":["prabhatravib@gmail.com","opportunities@monsterindia.com","info@monsterindia.com"],"spanDays":[2133,2648],"sample_subjects":["Salary: INR 10,00,000 - 15,00,000 P.A : JP Morgan, Prokarma, Larsen and toubro , Oracal, UST, IBM,  (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A: L&T, Dlf, Nissan, Siemens, Tata, Aditya Birla (Source: Monster)","Salary: INR 10,00,000 - 15,00,000 P.A  (Source: Monster)"]},{"id":"Misys Finastra Equation Business Analyst","emails":2,"participants":["prabhatravib@gmail.com","opportunities@monsterindia.com"],"spanDays":[2759,2925],"sample_subjects":["Misys (Finastra) Equation Business Analyst/ Functional Consultant required for Qatar (Source: Monster)","Misys (Finastra) Equation Business Analyst requiared for Qatar (Source: Monster)"]},{"id":"Equation Developer In Banking Domain","emails":2,"participants":["prabhatravib@gmail.com","info@monsterindia.com"],"spanDays":[2159,2159],"sample_subjects":["Equation Developer in banking domain required for Qatar (Source: Monster)"]},{"id":"Business Analyst Tester Misys Finastra","emails":2,"participants":["prabhatravib@gmail.com","opportunities@monsterindia.com"],"spanDays":[2739,2739],"sample_subjects":["Business Analyst / Tester - Misys (Finastra) Equation Lending (Loan Originator) Required for Qatar (Source: Monster)"]},{"id":"Thank You","emails":2,"participants":["info@mg.bhgmoney.com","no-reply@newsletter.starsports.com"],"spanDays":[1430,4860],"sample_subjects":["Thank You"]},{"id":"Utf8B4Pififbyywjoyxqsignozwnrig91Dcb0Aglzihbob3Rvig9U Utf8Bifbpy2J1Bse","emails":10,"participants":["noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m10.myzamanamail.com","noreply@m4.myzamanamail.com","noreply@m5.myzamanamail.com"],"spanDays":[1188,1331],"sample_subjects":["=?utf-8?B?4piFIFByYWJoYXQsIGNoZWNrIG91dCB0aGlzIHBob3RvIG9u?=\n =?utf-8?B?IFBpY2J1bSE=?="]},{"id":"Utf8B4Pifie5Ldybwag90B3Mgb24Gugljynvtiq","emails":9,"participants":["noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m10.myzamanamail.com","noreply@m4.myzamanamail.com","noreply@m5.myzamanamail.com"],"spanDays":[1191,1366],"sample_subjects":["=?utf-8?B?4piFIE5ldyBwaG90b3Mgb24gUGljYnVtIQ==?="]},{"id":"Utf8B4Pififbyywjoyxqsihlvdsboyxzligegbmv3Ihbob3Rvig9U Utf8Bifbpy2J1Bse","emails":20,"participants":["noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m7.myzamanamail.com","noreply@m10.myzamanamail.com","noreply@m4.myzamanamail.com","noreply@m5.myzamanamail.com"],"spanDays":[1191,1422],"sample_subjects":["=?utf-8?B?4piFIFByYWJoYXQsIHlvdSBoYXZlIGEgbmV3IHBob3RvIG9u?=\n =?utf-8?B?IFBpY2J1bSE=?="]},{"id":"Utf8B4Pifierlym9Yaxrhiglzihdhaxrpbmcgdg8Gy2Hhdcb3Axro Utf8Bihlvdse","emails":2,"participants":["noreply@m5.myzamanamail.com","noreply@m7.myzamanamail.com"],"spanDays":[1268,1275],"sample_subjects":["=?utf-8?B?4piFIERlYm9yaXRhIGlzIHdhaXRpbmcgdG8gY2hhdCB3aXRo?=\n =?utf-8?B?IHlvdSE=?="]},{"id":"Utf8B4Pififbyywjoyxqsighhdmugew91Ihnlzw4Gdghpcybwag90 Utf8Bbyb5Zxq","emails":14,"participants":["noreply@m10.myzamanamail.com","noreply@m7.myzamanamail.com","noreply@m4.myzamanamail.com","noreply@m5.myzamanamail.com"],"spanDays":[1184,1394],"sample_subjects":["=?utf-8?B?4piFIFByYWJoYXQsIGhhdmUgeW91IHNlZW4gdGhpcyBwaG90?=\n =?utf-8?B?byB5ZXQ/?="]},{"id":"Utf8B4Pififrhbwkgsw4Grgvsagk","emails":2,"participants":["noreply@m4.myzamanamail.com","noreply@m7.myzamanamail.com"],"spanDays":[1366,1422],"sample_subjects":["=?utf-8?B?4piFIFRhbWkgSW4gRGVsaGk=?="]},{"id":"Utf8B4Pififnozw1Vbnrpihdhbnrzihrvig1Lzxqgew91Iq","emails":2,"participants":["noreply@m7.myzamanamail.com","noreply@m10.myzamanamail.com"],"spanDays":[1338,1359],"sample_subjects":["=?utf-8?B?4piFIFNoZW1vbnRpIHdhbnRzIHRvIG1lZXQgeW91IQ==?="]},{"id":"Id Like To Chat With","emails":2,"participants":["noreply@m5.myzamanamail.com","noreply@m3.myzamanamail.com"],"spanDays":[1457,1520],"sample_subjects":["I'd like to chat with you!"]},{"id":"Utf8B4Pififbyzxjuysbpcyb3Ywl0Aw5Nihrvignoyxqgd2L0Acb5 Utf8Bb3Uh","emails":2,"participants":["noreply@m5.myzamanamail.com","noreply@m10.myzamanamail.com"],"spanDays":[1296,1352],"sample_subjects":["=?utf-8?B?4piFIFByZXJuYSBpcyB3YWl0aW5nIHRvIGNoYXQgd2l0aCB5?=\n =?utf-8?B?b3Uh?="]},{"id":"Pepsi Ipl Daily Fix In","emails":8,"participants":["no-reply@newsletter.starsports.com","noreply@mail.starsports.com"],"spanDays":[1160,1171],"sample_subjects":["Pepsi IPL Daily Fix in less than 5 mins: MSD's football tricks,\n Faf's catching and a nearly headless Unadkat!","Pepsi IPL Daily Fix in 223 sec: Maxwell, Binny, Nehra and more!","Pepsi IPL daily fix in less than 5 mins.","Pepsi IPL Daily Fix in 423 sec: Yuvraj Singh, Virat Kohli and a\n Spider!","Pepsi IPL Daily Fix in 309 sec: Kallis, Narine, Watson & more"]},{"id":"Utf8B4Pififbyywjoyxqsighhdmugew91Ihnlzw4Gdghpcybwag90 Utf8Bbybvbibqawnidw0Gewv0Pw","emails":10,"participants":["noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m7.myzamanamail.com","noreply@m10.myzamanamail.com","noreply@m4.myzamanamail.com","noreply@m5.myzamanamail.com"],"spanDays":[1190,1373],"sample_subjects":["=?utf-8?B?4piFIFByYWJoYXQsIGhhdmUgeW91IHNlZW4gdGhpcyBwaG90?=\n =?utf-8?B?byBvbiBQaWNidW0geWV0Pw==?="]},{"id":"Utf8B4Pififlvdsboyxzlidqgdw5Yzwfkig1Lc3Nhz2Vz","emails":7,"participants":["noreply@m1.myzamanamail.com","noreply@m3.myzamanamail.com","noreply@m10.myzamanamail.com","noreply@m7.myzamanamail.com","noreply@m4.myzamanamail.com"],"spanDays":[887,918],"sample_subjects":["=?utf-8?B?4piFIFlvdSBoYXZlIDQgdW5yZWFkIG1lc3NhZ2Vz?="]},{"id":"Urgent Opening For Business Analyst","emails":2,"participants":["prabhatravib@gmail.com","opportunities@monster.com.sg"],"spanDays":[4108,4141],"sample_subjects":["Urgent opening for Business Analyst  :: for our fortune 500 MNC\n client in Singapore (Source: Monster)","Urgent opening for Business Analyst (Supply Chain) :: for our\n fortune 500 MNC client in Singapore  (Source: Monster)"]},{"id":"Learn More About Our Updated","emails":3,"participants":["no-reply@accounts.google.com","noreply-utos@google.com"],"spanDays":[3302,4816],"sample_subjects":["Learn more about our updated Terms of Service"]},{"id":"Message From Shiva","emails":5,"participants":["noreply@m10.myzamanamail.com","noreply@m5.myzamanamail.com","noreply@m1.myzamanamail.com"],"spanDays":[826,837],"sample_subjects":["Message from Shiva"]},{"id":"No Subject","emails":2,"participants":["shivakumar347@gmail.com","techkriti@iitk.ac.in"],"spanDays":[318,709],"sample_subjects":["No Subject"]},{"id":"Utf8B4Pififjpeweglsbxyw50Ihrvignoyxq","emails":2,"participants":["noreply@m1.myzamanamail.com","noreply@m7.myzamanamail.com"],"spanDays":[847,927],"sample_subjects":["=?utf-8?B?4piFIFJpeWEgLSBXYW50IHRvIGNoYXQ/?="]},{"id":"Utf8B4Pififnlbgzpzsb0Aw1Liq","emails":3,"participants":["noreply@m7.myzamanamail.com","noreply@m3.myzamanamail.com"],"spanDays":[1101,1142],"sample_subjects":["=?utf-8?B?4piFIFNlbGZpZSB0aW1lIQ==?="]},{"id":"Utf8B4Pifiefua2L0Ysatifdhbnqgdg8Gy2Hhdd8","emails":2,"participants":["noreply@m4.myzamanamail.com","noreply@m10.myzamanamail.com"],"spanDays":[867,869],"sample_subjects":["=?utf-8?B?4piFIEFua2l0YSAtIFdhbnQgdG8gY2hhdD8=?="]},{"id":"Utf8Qupdates_To_Our_Terms_Of_Service_And_Privacy_Policy","emails":3,"participants":["dropboxmail@dropbox.com","no-reply@dropboxmail.com"],"spanDays":[2138,4367],"sample_subjects":["=?utf-8?q?Updates_to_our_Terms_of_Service_and_Privacy_Policy?="]},{"id":"Excellent Job Opportunity Vba Developer","emails":2,"participants":["prabhatravib@gmail.com","opportunities@monster.com.sg"],"spanDays":[3617,3625],"sample_subjects":["Excellent Job Opportunity - VBA Developer - Work from Home (Source: Monster)","Excellent Job opportunity - VBA Developer - Penang location - 12 months Contract (Source: Monster)"]},{"id":"Techkriti11 Launching Iopc Crypto Season","emails":4,"participants":["paras.panwar@gmail.com","techkriti@iitk.ac.in","parasp@iitk.ac.in"],"spanDays":[0,0],"sample_subjects":["Techkriti'11:: launching IOPC, Crypto Season 2 and Nutcracker"]},{"id":"Utf8B4Pifiephd2Fuasbcagfuz3Jh","emails":2,"participants":["noreply@m4.myzamanamail.com","noreply@m1.myzamanamail.com"],"spanDays":[1317,1352],"sample_subjects":["=?utf-8?B?4piFIEphd2FuaSBCaGFuZ3Jh?="]},{"id":"Business Analyst Lending Loans Required","emails":2,"participants":["prabhatravib@gmail.com","opportunities@monsterindia.com"],"spanDays":[2790,2907],"sample_subjects":["Business Analyst - Lending (Loans) required for Qatar (Source: Monster)"]},{"id":"Security alert for prabhatravib@gmail.com","emails":1,"participants":["no-reply@accounts.google.com"],"spanDays":[5272,5272],"sample_subjects":["Security alert for prabhatravib@gmail.com"]},{"id":"The ball is in your court...","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5271,5271],"sample_subjects":["The ball is in your court..."]},{"id":"Security alert for prabhatravib@gmail.com","emails":1,"participants":["no-reply@accounts.google.com"],"spanDays":[5271,5271],"sample_subjects":["Security alert for prabhatravib@gmail.com"]},{"id":"Prabhat, Your Weekly Ticket Is Here","emails":1,"participants":["noreply@email.amctheatres.com"],"spanDays":[5269,5269],"sample_subjects":["Prabhat, Your Weekly Ticket Is Here"]},{"id":"=?UTF-8?B?RG9u4oCZdCBtaXNzIHRoZXNlIG11c3Qtc2VlcyDwn5GA?=","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5275,5275],"sample_subjects":["=?UTF-8?B?RG9u4oCZdCBtaXNzIHRoZXNlIG11c3Qtc2VlcyDwn5GA?="]},{"id":"Security alert for prabhatravib@gmail.com","emails":1,"participants":["no-reply@accounts.google.com"],"spanDays":[5264,5264],"sample_subjects":["Security alert for prabhatravib@gmail.com"]},{"id":"Your $70 discount awaits =?UTF-8?B?8J+RgA==?=","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5264,5264],"sample_subjects":["Your $70 discount awaits =?UTF-8?B?8J+RgA==?="]},{"id":"Prabhat, Your Weekly Ticket Is Here","emails":1,"participants":["noreply@email.amctheatres.com"],"spanDays":[5262,5262],"sample_subjects":["Prabhat, Your Weekly Ticket Is Here"]},{"id":"=?UTF-8?B?4pqg77iP?= REMINDER: get $70 off the best live sports","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5271,5271],"sample_subjects":["=?UTF-8?B?4pqg77iP?= REMINDER: get $70 off the best live sports"]},{"id":"Your exclusive gift awaits! =?UTF-8?B?8J+OgfCfpbM=?=","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5262,5262],"sample_subjects":["Your exclusive gift awaits! =?UTF-8?B?8J+OgfCfpbM=?="]},{"id":"Kick off your week with HUGE savings","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5260,5260],"sample_subjects":["Kick off your week with HUGE savings"]},{"id":"Security alert","emails":1,"participants":["no-reply@accounts.google.com"],"spanDays":[5275,5275],"sample_subjects":["Security alert"]},{"id":"See what =?UTF-8?B?ZXZlcnlvbmXigJlzIHdhdGNoaW5nIHRoaXMgSnVseSDwn5GA?=","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5263,5263],"sample_subjects":["See what =?UTF-8?B?ZXZlcnlvbmXigJlzIHdhdGNoaW5nIHRoaXMgSnVseSDwn5GA?="]},{"id":"Start your week with $80 off live sports","emails":1,"participants":["stream@newsletters.fubo.tv"],"spanDays":[5197,5197],"sample_subjects":["Start your week with $80 off live sports"]},{"id":"[Important] Build failed on your Render account","emails":1,"participants":["no-reply@render.com"],"spanDays":[5242,5242],"sample_subjects":["[Important] Build failed on your Render account"]},{"id":"Resolved 174960135100945: wrongly closed my account","emails":1,"participants":["no-reply-aws@amazon.com"],"spanDays":[5244,5244],"sample_subjects":["Resolved 174960135100945: wrongly closed my account"]}];
+const DEFAULTS = {"alpha_overview":0.7,"tau":14,"strong_w":0.3,"densityPerc":{"minimal":0.1,"normal":0.25,"dense":0.8}};
+
+// Enhanced utility functions
+function jaccard(a, b) {
+  const A = new Set(a), B = new Set(b);
+  if (A.size === 0 && B.size === 0) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / (A.size + B.size - inter);
+}
+
+function timeDecay(deltaDays, tau) {
+  return Math.exp(-deltaDays / tau);
+}
+
+function midpoint(span) {
+  return (span[0] + span[1]) / 2.0;
+}
+
+function topPercentEdges(edges, perc) {
+  if (perc >= 1.0) return edges;
+  const sorted = [...edges].sort((a, b) => b.w - a.w);
+  const keep = Math.max(1, Math.round(sorted.length * perc));
+  return sorted.slice(0, keep);
+}
+
+function components(nodes, edges) {
+  const id2idx = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
+  const adj = nodes.map(() => []);
+  edges.forEach(e => {
+    const u = id2idx[e.from], v = id2idx[e.to];
+    if (u !== undefined && v !== undefined) {
+      adj[u].push(v); adj[v].push(u);
+    }
+  });
+  const comp = Array(nodes.length).fill(-1);
+  let cid = 0;
+  const nodeToComp = {};
+  for (let i = 0; i < nodes.length; i++) {
+    if (comp[i] !== -1) continue;
+    const stack = [i];
+    comp[i] = cid;
+    while (stack.length) {
+      const x = stack.pop();
+      nodeToComp[nodes[x].id] = cid;
+      for (const y of adj[x]) if (comp[y] === -1) {
+        comp[y] = cid; stack.push(y);
+      }
+    }
+    cid++;
+  }
+  return nodeToComp;
+}
+
+function build(view, densityKey, colorBy, hideWeak, hideIsolates, hideSingleEmail) {
+  const tau = DEFAULTS.tau;
+  const strongW = DEFAULTS.strong_w;
+  const perc = DEFAULTS.densityPerc[densityKey || "normal"] || 0.25;
+
+  // Filter clusters
+  let filteredClusters = CLUSTERS;
+  if (hideSingleEmail) {
+    filteredClusters = filteredClusters.filter(c => c.emails > 1);
+  }
+
+  let edges = [];
+  if (view !== "isolates") {
+    for (let i = 0; i < filteredClusters.length; i++) {
+      for (let j = i + 1; j < filteredClusters.length; j++) {
+        const A = filteredClusters[i], B = filteredClusters[j];
+        const people = jaccard(A.participants, B.participants);
+        const ta = midpoint(A.spanDays), tb = midpoint(B.spanDays);
+        const dt = Math.abs(tb - ta);
+        const time = timeDecay(dt, tau);
+
+        let w;
+        if (view === "people") w = people;
+        else if (view === "time") w = time;
+        else w = DEFAULTS.alpha_overview * people + (1 - DEFAULTS.alpha_overview) * time;
+
+        if (w > 0.01) {  // Minimum threshold
+          edges.push({ from: A.id, to: B.id, w, people, time, dt });
+        }
+      }
+    }
+    edges = topPercentEdges(edges, perc);
+  }
+
+  if (hideWeak) edges = edges.filter(e => e.w >= strongW);
+
+  // Calculate node degrees
+  const degree = Object.fromEntries(filteredClusters.map(c => [c.id, 0]));
+  edges.forEach(e => { 
+    if (degree[e.from] !== undefined) degree[e.from] += e.w;
+    if (degree[e.to] !== undefined) degree[e.to] += e.w;
+  });
+  const maxDeg = Math.max(1, ...Object.values(degree));
+
+  // Enhanced color palette
+  const palette = [
+    "#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6",
+    "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1"
+  ];
+  
+  const nodeToComp = components(filteredClusters, edges);
+
+  // Create visual nodes
+  const nodesVis = filteredClusters
+    .filter(n => !(hideIsolates && degree[n.id] === 0))
+    .map(n => {
+      const d = degree[n.id];
+      const baseSize = Math.max(20, Math.min(60, 20 + Math.sqrt(n.emails) * 8));
+      const size = baseSize + (d / maxDeg) * 20;
+      
+      let color;
+      if (colorBy === "participant") {
+        const tp = n.participants[0] || "unknown";
+        const hash = tp.split('').reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0);
+        color = palette[Math.abs(hash) % palette.length];
+      } else if (colorBy === "volume") {
+        const intensity = Math.min(n.emails / 50, 1);
+        const redValue = Math.round(255 * intensity);
+        const blueValue = Math.round(255 * (1 - intensity));
+        color = "rgb(" + redValue + ", 100, " + blueValue + ")";
+      } else {
+        const comp = nodeToComp[n.id] || 0;
+        color = palette[comp % palette.length];
+      }
+
+      // Create proper HTML tooltip
+      let participantList = n.participants.slice(0, 5).join("<br/>");
+      if (n.participants.length > 5) participantList += "<br/>...";
+      
+      const tooltip = "<div style='max-width: 250px;'>" +
+        "<strong>" + n.id + "</strong><br/>" +
+        "<strong>Emails:</strong> " + n.emails + "<br/>" +
+        "<strong>Participants:</strong><br/>" + participantList +
+        "</div>";
+
+      return {
+        id: n.id,
+        label: n.id.length > 25 ? n.id.substring(0, 25) + "..." : n.id,
+        title: tooltip,
+        value: n.emails,
+        size,
+        color,
+        font: { size: Math.max(11, Math.min(14, 8 + Math.sqrt(n.emails))), face: "Segoe UI, Arial" }
+      };
+    });
+
+  // Create visual edges
+  const visibleIds = new Set(nodesVis.map(n => n.id));
+  const edgesVis = edges
+    .filter(e => visibleIds.has(e.from) && visibleIds.has(e.to))
+    .map(e => {
+      const strong = e.w >= strongW;
+      return {
+        from: e.from, to: e.to,
+        value: e.w,
+        width: strong ? 2 + 4 * e.w : 1 + 2 * e.w,
+        color: strong ? "#3B82F6" : "rgba(59, 130, 246, 0.3)",
+        dashes: !strong,
+        smooth: { enabled: true, type: "dynamic", roundness: 0.3 },
+        title: "<div><strong>Connection Strength:</strong> " + e.w.toFixed(2) + "<br/><strong>People Overlap:</strong> " + e.people.toFixed(2) + "<br/><strong>Time Proximity:</strong> " + e.time.toFixed(2) + "<br/><strong>Days Apart:</strong> " + e.dt + "</div>"
+      };
+    });
+
+  return { nodesVis, edgesVis };
+}
+
+// UI Management
+function readControls() {
+  return {
+    view: document.querySelector('input[name="view"]:checked').value,
+    density: document.querySelector('input[name="density"]:checked').value,
+    colorBy: document.querySelector('input[name="colorBy"]:checked').value,
+    hideWeak: document.getElementById('hideWeak').checked,
+    hideIsolates: document.getElementById('hideIsolates').checked,
+    hideSingleEmail: document.getElementById('hideSingleEmail').checked,
+  };
+}
+
+function applyPreset(name) {
+  // Remove active class from all buttons
+  document.querySelectorAll('.preset-bar button').forEach(btn => btn.classList.remove('active'));
+  document.querySelector('[data-preset="' + name + '"]').classList.add('active');
+
+  const presets = {
+    balanced: { view: "overview", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    people: { view: "people", density: "minimal", hideWeak: true, hideIsolates: false, colorBy: "participant" },
+    time: { view: "time", density: "normal", hideWeak: false, hideIsolates: false, colorBy: "community" },
+    communities: { view: "communities", density: "dense", hideWeak: false, hideIsolates: true, colorBy: "community" },
+    isolates: { view: "isolates", density: "dense", hideWeak: false, hideIsolates: false, colorBy: "volume" }
+  };
+
+  const preset = presets[name];
+  if (preset) {
+    document.querySelector('input[name="view"][value="' + preset.view + '"]').checked = true;
+    document.querySelector('input[name="density"][value="' + preset.density + '"]').checked = true;
+    document.querySelector('input[name="colorBy"][value="' + preset.colorBy + '"]').checked = true;
+    document.getElementById('hideWeak').checked = preset.hideWeak;
+    document.getElementById('hideIsolates').checked = preset.hideIsolates;
+  }
+}
+
+let network;
+function render() {
+  const controls = readControls();
+  const { nodesVis, edgesVis } = build(
+    controls.view, controls.density, controls.colorBy,
+    controls.hideWeak, controls.hideIsolates, controls.hideSingleEmail
+  );
+
+  const container = document.getElementById('network');
+  const data = { nodes: new vis.DataSet(nodesVis), edges: new vis.DataSet(edgesVis) };
+  
+  const options = {
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 1000, updateInterval: 25 },
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -26,
+        centralGravity: 0.005,
+        springLength: 230,
+        springConstant: 0.18,
+        damping: 0.15,
+        avoidOverlap: 0.1
+      },
+      maxVelocity: 30,
+      minVelocity: 0.1,
+      timestep: 0.35
+    },
+    interaction: { 
+      hover: true, 
+      multiselect: true, 
+      tooltipDelay: 300,
+      dragNodes: false,
+      zoomView: true,
+      dragView: true
+    },
+    edges: { 
+      smooth: { enabled: false }
+    },
+    nodes: {
+      chosen: {
+        node: function(values, id, selected, hovering) {
+          values.shadow = hovering;
+          values.shadowSize = hovering ? 10 : 5;
+        }
+      }
+    }
+  };
+
+  if (network) network.destroy();
+  network = new vis.Network(container, data, options);
+  
+  // Add click handler for detailed info
+  network.on("click", function(params) {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0];
+      const cluster = CLUSTERS.find(c => c.id === nodeId);
+      if (cluster) {
+        showNodeInfo(cluster, params.pointer.DOM);
+      }
+    }
+  });
+}
+
+function showNodeInfo(cluster, position) {
+  const panel = document.getElementById('info-panel');
+  panel.innerHTML = 
+    "<h4>" + cluster.id + "</h4>" +
+    "<p><strong>Emails:</strong> " + cluster.emails + "</p>" +
+    "<p><strong>Key Participants:</strong><br/>" + cluster.participants.slice(0, 5).join('<br/>') + "</p>" +
+    (cluster.sample_subjects ? "<p><strong>Sample Subjects:</strong><br/>" + cluster.sample_subjects.slice(0, 3).join('<br/>') + "</p>" : "");
+  panel.style.display = 'block';
+  panel.style.left = Math.min(position.x + 10, window.innerWidth - 320) + 'px';
+  panel.style.top = Math.min(position.y + 10, window.innerHeight - 200) + 'px';
+  
+  setTimeout(function() { panel.style.display = 'none'; }, 5000);
+}
+
+// Event Listeners
+document.getElementById('apply').addEventListener('click', render);
+document.querySelectorAll('.preset-bar button').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    applyPreset(btn.getAttribute('data-preset'));  
+    render();
+  });
+});
+
+// Initialize
+applyPreset('isolates');
+render();
+</script>
+
+</body>
+</html>
